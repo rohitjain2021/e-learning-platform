@@ -24,6 +24,8 @@ The **knowledge base** is the searchable collection of course content. RAG is th
 
 The bottom half of the diagram shows how documents become searchable:
 
+The documents can come from different sources, such as Google Drive, SharePoint, or other document storage systems. This architecture uses **Amazon S3** as its data source. Other sources can be connected through a suitable connector or ingestion process.
+
 1. **Store documents in Amazon S3.** This is the storage location for the learning materials.
 2. **Split the content into chunks.** Smaller passages make it easier to find the specific information needed for a question.
 3. **Create embeddings with Amazon Titan Text Embeddings V2.** An embedding is a list of numbers that represents the meaning of a passage. It helps the system find related ideas even when the learner uses different words.
