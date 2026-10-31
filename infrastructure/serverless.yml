@@ -1,9 +1,8 @@
 # Optional Serverless entry point; GitHub Actions deploys the same native YAML directly.
-# All infrastructure defaults live at the global level in parameters.yml.
-# Global settings for this optional tool. Reuse the shared parameter defaults wherever possible.
+# Define this template's configurable settings here and reference them below.
 custom:
-  projectName: ${file(parameters.yml):Parameters.ProjectName.Default}
-  deploymentStage: ${opt:stage, file(parameters.yml):Parameters.DeploymentStage.Default}
+  projectName: e-learning-platform
+  deploymentStage: ${opt:stage, 'dev'}
   awsRegion: ${opt:region, 'us-east-1'}
   deploymentArtifactBucketName: serverless-framework-deployments-us-east-1-5b907a5f-c0ac
 
@@ -23,20 +22,19 @@ provider:
   stage: ${self:custom.deploymentStage}
   deploymentBucket:
     name: ${self:custom.deploymentArtifactBucketName}
-  # Pass stage and runtime trust information into the same global CloudFormation parameters.
+  # Pass runtime deployment values into the parameters declared at the top of the resource templates.
   stackParameters:
     - ParameterKey: DeploymentStage
       ParameterValue: ${self:custom.deploymentStage}
     - ParameterKey: KnowledgeBaseTrustResourceId
       ParameterValue: ${env:KNOWLEDGE_BASE_TRUST_ID}
     - ParameterKey: KnowledgeBaseBootstrapTrustExpiresAt
-      ParameterValue: ${env:KNOWLEDGE_BASE_BOOTSTRAP_EXPIRES_AT, file(parameters.yml):Parameters.KnowledgeBaseBootstrapTrustExpiresAt.Default}
+      ParameterValue: ${env:KNOWLEDGE_BASE_BOOTSTRAP_EXPIRES_AT, '1970-01-01T00:00:00Z'}
   # Label the deployed stack for ownership and cost tracking.
   stackTags:
     Project: ${self:custom.projectName}
-# Combine the shared inputs and component definitions into one CloudFormation stack.
+# Combine the component templates, each with its own parameters, into one CloudFormation stack.
 resources:
-  - ${file(parameters.yml)}
   - ${file(resources/knowledge-base-storage.yml)}
   - ${file(resources/knowledge-base.yml)}
   - ${file(resources/knowledge-base-logging.yml)}

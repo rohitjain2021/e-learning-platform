@@ -1,9 +1,26 @@
-# Template fragment: external references are checked on the assembled template.
-# The build removes this editor-only configuration before full cfn-lint validation.
+# Define the inputs used by this template here, before its resources.
+# Ref reads an input below; Fn::Sub inserts inputs into resource names and identifiers.
+Parameters:
+  # Name this project so its resources and ownership tags are easy to recognize.
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  # Keep development resources separate from future test or production environments.
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  # Expire old processing logs automatically to limit storage costs.
+  KnowledgeBaseLogRetentionDays:
+    Type: Number
+    Default: 30
+
+# The knowledge-base resource is defined in its own template; full validation checks that link.
 Metadata:
   cfn-lint:
     config:
-      ignore_checks: [E1010, E1019, E1020, E3024]
+      ignore_checks: [E1010]
 
 # Send document-processing logs to a clearly named CloudWatch destination for troubleshooting.
 Resources:

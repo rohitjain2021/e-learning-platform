@@ -14,7 +14,6 @@ import yaml
 # Global paths: keep generated files separate from the YAML people edit.
 INFRASTRUCTURE_DIRECTORY = Path(__file__).resolve().parents[1]
 ARTIFACT_DIRECTORY = INFRASTRUCTURE_DIRECTORY / ".serverless"
-CONFIGURATION_FILE = INFRASTRUCTURE_DIRECTORY / "parameters.yml"
 RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml")
 # Fixed trust boundaries: a caller must not be able to choose a different trusted repository.
 EXPECTED_REPOSITORY = "rohitjain2021/e-learning-platform"
@@ -26,11 +25,10 @@ CHANGE_SET_POLL_ATTEMPTS = 120
 STACK_POLL_SECONDS = 5
 STACK_POLL_ATTEMPTS = 480
 FAILURE_EVENT_LIMIT = 20
-# Reuse the global YAML defaults; GitHub Actions may supply region and stage at runtime.
-PARAMETER_DEFAULTS = yaml.safe_load(CONFIGURATION_FILE.read_text(encoding="utf-8"))["Parameters"]
-EXPIRED_TRUST_TIMESTAMP = PARAMETER_DEFAULTS["KnowledgeBaseBootstrapTrustExpiresAt"]["Default"]
+# Define this script's defaults here; GitHub Actions can supply region and stage at runtime.
+EXPIRED_TRUST_TIMESTAMP = "1970-01-01T00:00:00Z"
 REGION = os.environ.get("AWS_REGION", "us-east-1")
-STAGE = os.environ.get("DEPLOYMENT_STAGE", PARAMETER_DEFAULTS["DeploymentStage"]["Default"])
+STAGE = os.environ.get("DEPLOYMENT_STAGE", "dev")
 
 
 def require_pipeline():
@@ -65,7 +63,7 @@ def build_template():
     """Merge native YAML sections without resolving CloudFormation intrinsics locally."""
     template = {"AWSTemplateFormatVersion": "2010-09-09",
                 "Description": "E-learning knowledge base, document storage, and application logging"}
-    for path in [CONFIGURATION_FILE] + [INFRASTRUCTURE_DIRECTORY / "resources" / p for p in RESOURCE_FILES]:
+    for path in [INFRASTRUCTURE_DIRECTORY / "resources" / p for p in RESOURCE_FILES]:
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         # Fragment editor exceptions must never suppress checks on the full template.
         metadata = document.get("Metadata", {})
@@ -75,8 +73,10 @@ def build_template():
         for section, entries in document.items():
             destination = template.setdefault(section, {})
             duplicates = destination.keys() & entries.keys()
-            if duplicates:
-                raise ValueError(f"Duplicate {section} definitions: {sorted(duplicates)}")
+            # Each template declares its own inputs. Shared input names must agree exactly.
+            conflicts = {key for key in duplicates if section != "Parameters" or destination[key] != entries[key]}
+            if conflicts:
+                raise ValueError(f"Conflicting or duplicate {section} definitions: {sorted(conflicts)}")
             destination.update(entries)
     return template
 

@@ -1,9 +1,19 @@
-# Template fragment: external references are checked on the assembled template.
-# The build removes this editor-only configuration before full cfn-lint validation.
-Metadata:
-  cfn-lint:
-    config:
-      ignore_checks: [E1020, E3024]
+# Define the inputs used by this template here, before its resources.
+# Ref reads an input below; Fn::Sub inserts inputs into resource names and identifiers.
+Parameters:
+  # Name this project so its resources and ownership tags are easy to recognize.
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  # Use the existing document bucket name to preserve the uploaded documents.
+  KnowledgeBaseBucketName:
+    Type: String
+    Default: e-learning-platform-knowledge-base
+  # Explain the bucket's purpose in its ownership and cost-tracking tags.
+  KnowledgeBaseStoragePurpose:
+    Type: String
+    Default: rag-knowledge-base-documents
 
 # These resources store the original documents and protect access to them.
 Resources:

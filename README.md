@@ -121,7 +121,7 @@ npm ci
 Pop-Location
 ```
 
-The infrastructure component owns the global CloudFormation parameters, resource YAML, optional Serverless configuration, and dependency lockfile. See the [infrastructure guide](infrastructure/README.md) for deployment details. Using the optional Serverless Framework v4 CLI separately requires its own authentication.
+The infrastructure component owns the resource YAML, each template's top-level parameters, optional Serverless configuration, and dependency lockfile. See the [infrastructure guide](infrastructure/README.md) for deployment details. Using the optional Serverless Framework v4 CLI separately requires its own authentication.
 
 ## Knowledge base document storage
 
@@ -135,7 +135,7 @@ The data source bucket is **`e-learning-platform-knowledge-base`**. Its infrastr
 
 Deployments run through GitHub Actions after changes are pushed to `main` and all checks pass. Local deployment commands are blocked. The [infrastructure guide](infrastructure/README.md) describes the OIDC deployment role. No Serverless secret is needed by the CloudFormation pipeline.
 
-Project settings are defined once in the global `Parameters` section of `infrastructure/parameters.yml`. Infrastructure resources reference those values through CloudFormation. The optional Serverless entry point imports the same parameter definitions. Existing deployed parameter overrides are preserved during updates.
+Each infrastructure template declares its own settings in a `Parameters` section at the top and references them below with `Ref` or `Fn::Sub`. There is no separate parameter file. The build combines the templates and checks that any shared parameter definitions agree. The optional Serverless entry point defines its own settings at the top. Existing deployed parameter overrides are preserved during updates.
 
 Choose the region where the knowledge base will run. The bucket name is globally unique, so use it from one stack only. If another account already owns the name, update the global bucket name before deploying. A bucket created outside this stack must be imported rather than recreated.
 

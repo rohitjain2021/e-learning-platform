@@ -4,9 +4,8 @@ All resource definitions are authored in YAML. AWS creation and updates run only
 
 ## Structure
 
-- parameters.yml: Global CloudFormation parameter defaults.
-- serverless.yml: Optional Serverless Framework entry point importing the same native YAML.
-- resources/: S3 storage, managed knowledge base, IAM service role, and log delivery.
+- serverless.yml: Optional Serverless entry point with its own top-level settings and resource imports.
+- resources/: S3 storage, managed knowledge base, IAM service role, and log delivery; each template declares its inputs at the top.
 - bootstrap/: Account-level GitHub OIDC deployment-role template.
 - scripts/: Offline YAML validation and guarded pipeline orchestration.
 - tests/: Deployment safety tests.
@@ -19,7 +18,7 @@ Generated state may use JSON under .serverless/; it is ignored by Git. The pipel
 1. Push to main, or run the workflow manually on main.
 2. GitHub Actions installs dependencies, runs frontend and infrastructure safety tests, and validates YAML.
 3. After checks pass, the deployment job assumes the project role with GitHub OIDC.
-4. The runner merges the native parameter and resource YAML and validates the CloudFormation template.
+4. The runner combines the native resource templates and their top-level parameters and validates the CloudFormation template.
 5. The runner creates a CloudFormation change set, rejects removals or possible replacements, and executes it. No Serverless account or license is needed by this deployment path.
 6. The job verifies the knowledge base, data source, and exact-resource service-role trust, then uploads a YAML template and deployment summary as artifacts.
 
@@ -47,7 +46,7 @@ The S3 connector reads demo/learning/ in e-learning-platform-knowledge-base. SMA
 
 The Bedrock role can list the source prefix, read its objects, invoke the selected model, and publish metrics only in the knowledge base namespace. It has no S3 write/delete or OpenSearch permissions.
 
-The deployment script reads an existing knowledge base ID from CloudFormation outputs and preserves any existing parameter overrides. New parameters use the global YAML defaults. For first creation only, trust uses a same-account, same-region knowledge-base pattern with a 30-minute expiration. The pipeline immediately deploys again with the new exact ID and verifies trust. Failed initial deployment cannot leave permanent wildcard trust. Deleted IDs are not hardcoded.
+The deployment script reads an existing knowledge base ID from CloudFormation outputs and preserves any existing parameter overrides. New parameters use the defaults declared in the resource templates. For first creation only, trust uses a same-account, same-region knowledge-base pattern with a 30-minute expiration. The pipeline immediately deploys again with the new exact ID and verifies trust. Failed initial deployment cannot leave permanent wildcard trust. Deleted IDs are not hardcoded.
 
 Application ingestion logs target /aws/vendedlogs/bedrock/e-learning-platform/dev/knowledge-base, with 30-day retention. These logs describe ingestion and document processing; they are not transcripts of every model or application request.
 
@@ -64,6 +63,6 @@ With Python 3.12 and Node.js 24, install the root requirements and infrastructur
 Resource files are template fragments. Their `Metadata.cfn-lint` settings suppress only standalone reference checks that require other fragments; syntax and resource-property checks remain enabled in the editor. The build removes this editor-only metadata, and `scripts/validate.py` runs pinned `cfn-lint` against the complete assembled template and the standalone bootstrap template, locally and in CI. Full-template lint still rejects missing parameters and resources. The generated readable template is saved under the ignored `.serverless/` directory for inspection.
 ## Reading and changing the configuration
 
-Start with `parameters.yml`: it holds the shared infrastructure defaults. The resource files explain the document store, searchable knowledge base, access permissions, and logs section by section. `Ref` reads a shared value or another resource's ID; `Fn::Sub` builds a name from those values. AWS provides account and region identifiers automatically.
+Open the resource template you want to change. Its `Parameters` section at the top defines the inputs used by the resources below it. There is no separate parameter file. `Ref` reads one of those inputs or a resource's ID; `Fn::Sub` builds a name from those values. AWS provides account and region identifiers automatically. The build combines these templates into one stack. Shared inputs such as `ProjectName` and `DeploymentStage` are declared in each template that uses them; conflicting definitions stop the build rather than silently overwriting a setting.
 
 The separate bootstrap stack declares its own inputs at the top because it must work before the application stack exists. Workflow settings are grouped in the workflow-level `env`; Python application settings live in `streamlit-ui/app_config.py`, and deployment paths and waiting limits are grouped at the top of `scripts/deploy.py`. Request-specific results and temporary loop values stay inside their functions. Credentials come from secrets or temporary AWS sessions, never from the global configuration files.

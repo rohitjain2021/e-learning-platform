@@ -35,7 +35,7 @@ UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, 
 def main():
     """Check source YAML and complete CloudFormation templates without deploying anything."""
     # Check every authored infrastructure and workflow file for basic YAML mistakes.
-    files = [INFRASTRUCTURE_DIRECTORY / "serverless.yml", INFRASTRUCTURE_DIRECTORY / "parameters.yml"]
+    files = [INFRASTRUCTURE_DIRECTORY / "serverless.yml"]
     files += sorted((INFRASTRUCTURE_DIRECTORY / "resources").glob("*.yml"))
     files += sorted((INFRASTRUCTURE_DIRECTORY / "bootstrap").glob("*.yml"))
     files += sorted((INFRASTRUCTURE_DIRECTORY.parent / ".github" / "workflows").glob("*.yml"))

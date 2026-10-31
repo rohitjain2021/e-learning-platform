@@ -49,6 +49,37 @@ class DeploymentSafetyTests(unittest.TestCase):
         self.assertEqual(template["Parameters"]["EmbeddingDimensions"]["Default"], 1024)
         self.assertEqual(template["Parameters"]["EmbeddingModelId"]["Default"], "amazon.nova-2-multimodal-embeddings-v1:0")
 
+    def test_each_template_declares_the_parameters_it_uses(self):
+        """Ensure template inputs are defined at the top of the file that references them."""
+        import re
+        import yaml
+        parameter_names = set(DEPLOY.build_template()["Parameters"])
+        for name in DEPLOY.RESOURCE_FILES:
+            path = DEPLOY.INFRASTRUCTURE_DIRECTORY / "resources" / name
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            resource_text = yaml.safe_dump({k: v for k, v in document.items() if k != "Parameters"})
+            references = set(re.findall(r"Ref: ([A-Za-z0-9]+)", resource_text))
+            references.update(re.findall(r"\$\{([A-Za-z0-9]+)\}", resource_text))
+            with self.subTest(template=name):
+                self.assertTrue((references & parameter_names).issubset(document["Parameters"]))
+
+    def test_conflicting_shared_parameter_definitions_are_rejected(self):
+        """Stop composition if two templates disagree about a shared input."""
+        import shutil
+        import yaml
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "resources").mkdir()
+            for name in DEPLOY.RESOURCE_FILES:
+                shutil.copyfile(DEPLOY.INFRASTRUCTURE_DIRECTORY / "resources" / name, root / "resources" / name)
+            path = root / "resources" / "knowledge-base.yml"
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            document["Parameters"]["ProjectName"]["Default"] = "different-project"
+            path.write_text(yaml.safe_dump(document), encoding="utf-8")
+            with patch.object(DEPLOY, "INFRASTRUCTURE_DIRECTORY", root):
+                with self.assertRaisesRegex(ValueError, "Conflicting.*Parameters"):
+                    DEPLOY.build_template()
+
     def test_full_template_lint_still_catches_broken_cross_file_references(self):
         from cfnlint.api import lint
         import yaml

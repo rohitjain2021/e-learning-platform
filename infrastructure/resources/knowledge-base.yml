@@ -1,9 +1,46 @@
-# Template fragment: external references are checked on the assembled template.
-# The build removes this editor-only configuration before full cfn-lint validation.
+# Define the inputs used by this template here, before its resources.
+# Ref reads an input below; Fn::Sub inserts inputs into resource names and identifiers.
+Parameters:
+  # Name this project so its resources and ownership tags are easy to recognize.
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  # Keep development resources separate from future test or production environments.
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  # Describe this searchable collection in the AWS console.
+  KnowledgeBaseDescription:
+    Type: String
+    Default: Learning documents with managed indexing and on-demand Nova embeddings
+  # Read only this document folder inside the S3 bucket.
+  KnowledgeBaseSourcePrefix:
+    Type: String
+    Default: demo/learning/
+  # Select the Amazon model that turns document meaning into searchable numbers.
+  EmbeddingModelId:
+    Type: String
+    Default: amazon.nova-2-multimodal-embeddings-v1:0
+  # Set the embedding size required by the selected model and managed index.
+  EmbeddingDimensions:
+    Type: Number
+    Default: 1024
+  # The pipeline sets the exact knowledge base ID after its first creation.
+  KnowledgeBaseTrustResourceId:
+    Type: String
+    Default: '*'
+  # Expire temporary first-creation access; the default old date grants no access.
+  KnowledgeBaseBootstrapTrustExpiresAt:
+    Type: String
+    Default: '1970-01-01T00:00:00Z'
+
+# The S3 resource is defined in the storage template and checked when the templates are combined.
 Metadata:
   cfn-lint:
     config:
-      ignore_checks: [E1010, E1019, E1020, E3024]
+      ignore_checks: [E1010, E1019, E1020]
 
 # Detect the first deployment, before the knowledge base has an ID of its own.
 Conditions:

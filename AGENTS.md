@@ -18,8 +18,8 @@
 
 - Author all infrastructure and CloudFormation resource definitions in YAML (`.yml` or `.yaml`), never JSON. Keep source files under `infrastructure/` and its `resources/` directory.
 - Serverless-generated state and build artifacts in `.serverless/` may use JSON. Do not manually edit or rename those tool-managed files; keep them ignored by Git. This exception does not apply to authored infrastructure definitions.
-- Define configurable project values once, at the top/global configuration level, before referencing them elsewhere.
-- Keep infrastructure defaults in the top-level `Parameters` section of `infrastructure/parameters.yml`. Resource YAML uses native CloudFormation `Ref` and `Fn::Sub`; the optional Serverless entry point imports the same parameter file.
+- Define each template's configurable values at the top of that same template, before referencing them below.
+- Declare CloudFormation inputs in a top-level `Parameters` section inside each resource template. Do not create or import a separate shared parameter YAML file. Use `Ref` and `Fn::Sub` within the same template. Shared parameter names across combined templates must have identical definitions; the build rejects conflicts. The optional Serverless file defines its own settings in its top-level `custom` section.
 - Keep application configuration in a shared configuration module when application code is added. Pass configuration into functions instead of introducing mutable global state.
 - Define workflow settings in workflow-level `env` or reference the project's existing configuration files, such as `infrastructure/.nvmrc`.
 - Keep dependency versions in their package manifests and lockfiles. Fixed AWS schema values and policy constants do not need to become configurable variables.
@@ -30,5 +30,5 @@
 
 - Add a plain-language comment above each infrastructure resource, policy purpose, configuration group, and workflow section. Explain what it does, why it is needed, and its practical benefit.
 - Give application and deployment functions a short docstring explaining their purpose. Explain non-obvious safety checks and processing stages without repeating every line of code.
-- Keep configurable defaults at the top/global component level. Values calculated for a request or deployment stay local to the function using them. Fixed AWS schema values and policy actions are not configurable project settings.
+- Keep configurable defaults at the top of the file or template that uses them. Do not move template inputs into a separate parameter file. Values calculated for a request or deployment stay local to the function using them. Fixed AWS schema values and policy actions are not configurable project settings.
 - Comments must describe actual behavior and stay accurate when the code changes. Never include credentials in examples or comments.
