@@ -1,0 +1,59 @@
+Resources:
+  KnowledgeBaseBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: ${self:custom.knowledgeBaseBucketName}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: Project
+          Value: ${self:custom.projectName}
+        - Key: Purpose
+          Value: ${self:custom.knowledgeBaseStoragePurpose}
+
+  KnowledgeBaseBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: KnowledgeBaseBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - Fn::GetAtt: [KnowledgeBaseBucket, Arn]
+              - Fn::Join:
+                  - ''
+                  - - Fn::GetAtt: [KnowledgeBaseBucket, Arn]
+                    - '/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+                aws:PrincipalIsAWSService: 'false'
+
+Outputs:
+  KnowledgeBaseBucketName:
+    Description: S3 bucket containing source documents for the RAG knowledge base
+    Value:
+      Ref: KnowledgeBaseBucket
+  KnowledgeBaseBucketArn:
+    Description: ARN of the knowledge base source bucket
+    Value:
+      Fn::GetAtt: [KnowledgeBaseBucket, Arn]

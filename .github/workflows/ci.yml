@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHON_VERSION: '3.12'
+
 jobs:
   dependencies:
     name: Check Python and Serverless dependencies
@@ -24,7 +27,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: requirements.txt
 

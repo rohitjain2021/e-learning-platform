@@ -97,7 +97,29 @@ Use Node.js 24, as specified in [.nvmrc](.nvmrc), then install the tooling:
 npm ci
 ```
 
-The [package-lock.json](package-lock.json) records the Node.js dependency versions. The backend's functions, API routes, and AWS settings will be defined in `serverless.yml` when we add the backend. Serverless Framework v4 requires a Serverless account or license key for deployment.
+The [package-lock.json](package-lock.json) records the Node.js dependency versions. [serverless.yml](serverless.yml) defines the AWS deployment and loads the S3 resources from [infrastructure/knowledge-base-storage.yml](infrastructure/knowledge-base-storage.yml). Serverless Framework v4 requires a Serverless account or license key for deployment.
+
+## Knowledge base document storage
+
+The data source bucket is **`e-learning-platform-knowledge-base`**. Its infrastructure configuration includes:
+
+- **Encryption at rest:** Default server-side encryption using S3-managed keys (SSE-S3, AES-256).
+- **Private access:** All S3 public access settings are blocked, and ACLs are disabled.
+- **Encrypted connections:** A bucket policy denies HTTP requests from non-service principals; use HTTPS when accessing documents.
+- **Versioning:** Previous document versions are kept when files are overwritten or deleted normally.
+- **Retention:** CloudFormation retains the bucket and documents if the stack is deleted or the bucket resource is replaced.
+
+With Node.js 24, the npm dependencies, and AWS and Serverless credentials configured, deploy with:
+
+```powershell
+npx serverless deploy --stage dev --region us-east-1
+```
+
+Project settings are defined once in the `custom` section at the top of `serverless.yml`. Provider settings and infrastructure resources reference those global values. To change the bucket name, update `custom.knowledgeBaseBucketName` there.
+
+Choose the region where the knowledge base will run. The bucket name is globally unique, so use it from one stack only. If another account already owns the name, update the global bucket name before deploying. A bucket created outside this stack must be imported rather than recreated.
+
+The stack outputs the bucket name and ARN. This creates document storage; connecting it to a Bedrock knowledge base requires a data source and a knowledge base service role with access to the bucket.
 
 ## GitHub Actions pipeline
 

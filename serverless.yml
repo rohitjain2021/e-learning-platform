@@ -1,0 +1,21 @@
+# Global project settings: define configurable values here and reference them below.
+custom:
+  projectName: e-learning-platform
+  awsRegion: ${opt:region, 'us-east-1'}
+  deploymentStage: ${opt:stage, 'dev'}
+  knowledgeBaseBucketName: ${self:custom.projectName}-knowledge-base
+  knowledgeBaseStoragePurpose: rag-knowledge-base-documents
+
+service: ${self:custom.projectName}
+frameworkVersion: '4'
+configValidationMode: error
+
+provider:
+  name: aws
+  region: ${self:custom.awsRegion}
+  stage: ${self:custom.deploymentStage}
+  stackTags:
+    Project: ${self:custom.projectName}
+
+# CloudFormation resources for the documents used by the RAG knowledge base.
+resources: ${file(infrastructure/knowledge-base-storage.yml)}
