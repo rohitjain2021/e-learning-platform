@@ -4,63 +4,72 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      LogGroupName: ${self:custom.knowledgeBaseLogGroupName}
-      RetentionInDays: ${self:custom.knowledgeBaseLogRetentionDays}
+      LogGroupName:
+        Fn::Sub: /aws/vendedlogs/bedrock/${ProjectName}/${DeploymentStage}/knowledge-base
+      RetentionInDays:
+        Ref: KnowledgeBaseLogRetentionDays
       Tags:
-        - Key: Project
-          Value: ${self:custom.projectName}
-
+      - Key: Project
+        Value:
+          Ref: ProjectName
   KnowledgeBaseApplicationLogPolicy:
     Type: AWS::Logs::ResourcePolicy
     Properties:
-      PolicyName: ${self:custom.knowledgeBaseLogPolicyName}
+      PolicyName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-kb-logs
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: DeliverKnowledgeBaseApplicationLogs
-            Effect: Allow
-            Principal:
-              Service: delivery.logs.amazonaws.com
-            Action:
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-            Resource:
-              Fn::GetAtt: [KnowledgeBaseApplicationLogGroup, Arn]
-            Condition:
-              StringEquals:
-                aws:SourceAccount:
-                  Ref: AWS::AccountId
-              ArnLike:
-                aws:SourceArn:
-                  Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
-
+        - Sid: DeliverKnowledgeBaseApplicationLogs
+          Effect: Allow
+          Principal:
+            Service: delivery.logs.amazonaws.com
+          Action:
+          - logs:CreateLogStream
+          - logs:PutLogEvents
+          Resource:
+            Fn::GetAtt:
+            - KnowledgeBaseApplicationLogGroup
+            - Arn
+          Condition:
+            StringEquals:
+              aws:SourceAccount:
+                Ref: AWS::AccountId
+            ArnLike:
+              aws:SourceArn:
+                Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
   KnowledgeBaseApplicationLogSource:
     Type: AWS::Logs::DeliverySource
     Properties:
-      Name: ${self:custom.knowledgeBaseLogSourceName}
+      Name:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-kb-application-source
       LogType: APPLICATION_LOGS
       ResourceArn:
-        Fn::GetAtt: [LearningKnowledgeBase, KnowledgeBaseArn]
-
+        Fn::GetAtt:
+        - LearningKnowledgeBase
+        - KnowledgeBaseArn
   KnowledgeBaseApplicationLogDestination:
     Type: AWS::Logs::DeliveryDestination
     Properties:
-      Name: ${self:custom.knowledgeBaseLogDestinationName}
+      Name:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-kb-application-destination
       DestinationResourceArn:
-        Fn::GetAtt: [KnowledgeBaseApplicationLogGroup, Arn]
+        Fn::GetAtt:
+        - KnowledgeBaseApplicationLogGroup
+        - Arn
       OutputFormat: json
-
   KnowledgeBaseApplicationLogDelivery:
     Type: AWS::Logs::Delivery
     Properties:
-      DeliverySourceName: ${self:custom.knowledgeBaseLogSourceName}
+      DeliverySourceName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-kb-application-source
       DeliveryDestinationArn:
-        Fn::GetAtt: [KnowledgeBaseApplicationLogDestination, Arn]
-    # The source name is literal configuration; explicitly enforce creation order.
+        Fn::GetAtt:
+        - KnowledgeBaseApplicationLogDestination
+        - Arn
     DependsOn:
-      - KnowledgeBaseApplicationLogPolicy
-      - KnowledgeBaseApplicationLogSource
-
+    - KnowledgeBaseApplicationLogPolicy
+    - KnowledgeBaseApplicationLogSource
 Outputs:
   KnowledgeBaseApplicationLogGroupName:
     Value:

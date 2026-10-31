@@ -1,102 +1,110 @@
 Conditions:
   IsKnowledgeBaseBootstrap:
     Fn::Equals:
-      - '${self:custom.knowledgeBaseTrustResourceId}'
-      - '*'
-
+    - Ref: KnowledgeBaseTrustResourceId
+    - '*'
 Resources:
   KnowledgeBaseServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: ${self:custom.knowledgeBaseServiceRoleName}
-      Description: Read the project learning documents and invoke only the chosen embedding model
+      RoleName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-bedrock-kb-service
+      Description: Read the project learning documents and invoke only the chosen
+        embedding model
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Effect: Allow
-            Principal:
-              Service: bedrock.amazonaws.com
-            Action: sts:AssumeRole
+        - Effect: Allow
+          Principal:
+            Service: bedrock.amazonaws.com
+          Action: sts:AssumeRole
+          Condition:
+            StringEquals:
+              aws:SourceAccount:
+                Ref: AWS::AccountId
+            ArnLike:
+              aws:SourceArn:
+                Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${KnowledgeBaseTrustResourceId}
+            DateLessThan:
+              Fn::If:
+              - IsKnowledgeBaseBootstrap
+              - aws:CurrentTime:
+                  Ref: KnowledgeBaseBootstrapTrustExpiresAt
+              - Ref: AWS::NoValue
+      Policies:
+      - PolicyName: KnowledgeBaseDocumentAndEmbeddingAccess
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Sid: ListLearningDocuments
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource:
+              Fn::GetAtt:
+              - KnowledgeBaseBucket
+              - Arn
             Condition:
               StringEquals:
-                aws:SourceAccount:
+                aws:ResourceAccount:
                   Ref: AWS::AccountId
-              ArnLike:
-                aws:SourceArn:
-                  Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${self:custom.knowledgeBaseTrustResourceId}
-              DateLessThan:
-                Fn::If:
-                  - IsKnowledgeBaseBootstrap
-                  - aws:CurrentTime: '${self:custom.knowledgeBaseBootstrapTrustExpiresAt}'
-                  - Ref: AWS::NoValue
-      Policies:
-        - PolicyName: KnowledgeBaseDocumentAndEmbeddingAccess
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Sid: ListLearningDocuments
-                Effect: Allow
-                Action: s3:ListBucket
-                Resource:
-                  Fn::GetAtt: [KnowledgeBaseBucket, Arn]
-                Condition:
-                  StringEquals:
-                    aws:ResourceAccount:
-                      Ref: AWS::AccountId
-                  StringLike:
-                    s3:prefix:
-                      - ${self:custom.knowledgeBaseSourcePrefix}*
-              - Sid: ReadLearningDocuments
-                Effect: Allow
-                Action: s3:GetObject
-                Resource:
-                  Fn::Sub: '${KnowledgeBaseBucket.Arn}/${self:custom.knowledgeBaseSourcePrefix}*'
-                Condition:
-                  StringEquals:
-                    aws:ResourceAccount:
-                      Ref: AWS::AccountId
-              - Sid: InvokeSelectedEmbeddingModel
-                Effect: Allow
-                Action: bedrock:InvokeModel
-                Resource:
-                  Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${self:custom.embeddingModelId}
-              - Sid: PublishKnowledgeBaseMetrics
-                Effect: Allow
-                Action: cloudwatch:PutMetricData
-                # PutMetricData has no resource ARN; constrain its namespace instead.
-                Resource: '*'
-                Condition:
-                  StringEquals:
-                    cloudwatch:namespace: AWS/Bedrock/KnowledgeBases
+              StringLike:
+                s3:prefix:
+                - Fn::Sub: ${KnowledgeBaseSourcePrefix}*
+          - Sid: ReadLearningDocuments
+            Effect: Allow
+            Action: s3:GetObject
+            Resource:
+              Fn::Sub: ${KnowledgeBaseBucket.Arn}/${KnowledgeBaseSourcePrefix}*
+            Condition:
+              StringEquals:
+                aws:ResourceAccount:
+                  Ref: AWS::AccountId
+          - Sid: InvokeSelectedEmbeddingModel
+            Effect: Allow
+            Action: bedrock:InvokeModel
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}
+          - Sid: PublishKnowledgeBaseMetrics
+            Effect: Allow
+            Action: cloudwatch:PutMetricData
+            Resource: '*'
+            Condition:
+              StringEquals:
+                cloudwatch:namespace: AWS/Bedrock/KnowledgeBases
       Tags:
-        - Key: Project
-          Value: ${self:custom.projectName}
-
+      - Key: Project
+        Value:
+          Ref: ProjectName
   LearningKnowledgeBase:
     Type: AWS::Bedrock::KnowledgeBase
     Properties:
-      Name: ${self:custom.knowledgeBaseName}
-      Description: ${self:custom.knowledgeBaseDescription}
+      Name:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-knowledge-base
+      Description:
+        Ref: KnowledgeBaseDescription
       RoleArn:
-        Fn::GetAtt: [KnowledgeBaseServiceRole, Arn]
+        Fn::GetAtt:
+        - KnowledgeBaseServiceRole
+        - Arn
       KnowledgeBaseConfiguration:
         Type: MANAGED
         ManagedKnowledgeBaseConfiguration:
-          # CUSTOM selects the requested Bedrock model within a MANAGED knowledge base.
           EmbeddingModelType: CUSTOM
           EmbeddingModelArn:
-            Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${self:custom.embeddingModelId}
+            Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}
           EmbeddingModelConfiguration:
             BedrockEmbeddingModelConfiguration:
-              Dimensions: ${self:custom.embeddingDimensions}
+              Dimensions:
+                Ref: EmbeddingDimensions
               EmbeddingDataType: FLOAT32
       Tags:
-        Project: ${self:custom.projectName}
-
+        Project:
+          Ref: ProjectName
   LearningKnowledgeBaseDataSource:
     Type: AWS::Bedrock::DataSource
     Properties:
-      Name: ${self:custom.knowledgeBaseDataSourceName}
+      Name:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-learning-documents
       Description: Learning documents from the existing encrypted S3 bucket
       KnowledgeBaseId:
         Ref: LearningKnowledgeBase
@@ -104,7 +112,6 @@ Resources:
       DataSourceConfiguration:
         Type: MANAGED_KNOWLEDGE_BASE_CONNECTOR
         ManagedKnowledgeBaseConnectorConfiguration:
-          # No SyncSchedule means manual/on-demand synchronization.
           ConnectorParameters:
             type: S3
             version: '1'
@@ -115,12 +122,11 @@ Resources:
                 Ref: AWS::AccountId
             filterConfiguration:
               inclusionPrefixes:
-                - ${self:custom.knowledgeBaseSourcePrefix}
-      # Omit chunkingConfiguration to use the service default (300 tokens, 20% overlap).
+              - Ref: KnowledgeBaseSourcePrefix
+      # Default chunking; on-demand sync (no SyncSchedule configured).
       VectorIngestionConfiguration:
         ParsingConfiguration:
           ParsingStrategy: SMART_PARSING
-
 Outputs:
   LearningKnowledgeBaseId:
     Description: Managed learning knowledge base ID
@@ -128,10 +134,16 @@ Outputs:
       Ref: LearningKnowledgeBase
   LearningKnowledgeBaseArn:
     Value:
-      Fn::GetAtt: [LearningKnowledgeBase, KnowledgeBaseArn]
+      Fn::GetAtt:
+      - LearningKnowledgeBase
+      - KnowledgeBaseArn
   LearningKnowledgeBaseDataSourceId:
     Value:
-      Fn::GetAtt: [LearningKnowledgeBaseDataSource, DataSourceId]
+      Fn::GetAtt:
+      - LearningKnowledgeBaseDataSource
+      - DataSourceId
   LearningKnowledgeBaseServiceRoleArn:
     Value:
-      Fn::GetAtt: [KnowledgeBaseServiceRole, Arn]
+      Fn::GetAtt:
+      - KnowledgeBaseServiceRole
+      - Arn

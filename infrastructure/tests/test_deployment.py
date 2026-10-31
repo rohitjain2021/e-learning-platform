@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from tempfile import TemporaryDirectory
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, WaiterError
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "deploy.py"
@@ -30,13 +31,81 @@ class DeploymentSafetyTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     DEPLOY.require_pipeline()
 
-    def test_missing_serverless_authentication_fails_before_aws_calls(self):
+    def test_trusted_pipeline_does_not_require_serverless_credentials(self):
         with patch.dict(os.environ, {
             "GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
             "GITHUB_REF": DEPLOY.EXPECTED_REF,
         }, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "Actions secrets"):
-                DEPLOY.require_pipeline()
+            DEPLOY.require_pipeline()
+
+    def test_template_is_native_cloudformation_with_retained_source_bucket(self):
+        import yaml
+        template = DEPLOY.build_template()
+        self.assertNotIn("${self:", yaml.safe_dump(template))
+        self.assertEqual(template["Resources"]["KnowledgeBaseBucket"]["DeletionPolicy"], "Retain")
+        self.assertEqual(template["Resources"]["LearningKnowledgeBase"]["Properties"]["KnowledgeBaseConfiguration"]["Type"], "MANAGED")
+        self.assertEqual(template["Parameters"]["EmbeddingDimensions"]["Default"], 1024)
+        self.assertEqual(template["Parameters"]["EmbeddingModelId"]["Default"], "amazon.nova-2-multimodal-embeddings-v1:0")
+
+    def test_removals_and_possible_replacements_are_blocked(self):
+        for details in ({"Action": "Remove"}, {"Action": "Modify", "Replacement": "True"},
+                        {"Action": "Modify", "Replacement": "Conditional"}):
+            with self.subTest(details=details), self.assertRaisesRegex(RuntimeError, "migration"):
+                DEPLOY.validate_changes([{"ResourceChange": {
+                    "LogicalResourceId": "KnowledgeBaseBucket", "ResourceType": "AWS::S3::Bucket", **details}}])
+
+    def test_native_deployment_is_also_blocked_locally(self):
+        from unittest.mock import Mock
+        client = Mock()
+        with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(RuntimeError, "GitHub Actions"):
+            DEPLOY.package_and_deploy(client, "example-stack", "*")
+        client.create_change_set.assert_not_called()
+
+    def test_change_set_preserves_overrides_and_executes_without_serverless(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.describe_stacks.return_value = {"Stacks": [{"Parameters": [
+            {"ParameterKey": "KnowledgeBaseSourcePrefix", "ParameterValue": "existing/prefix/"}]}]}
+        client.create_change_set.return_value = {"Id": "example-change-set"}
+        client.get_paginator.return_value.paginate.return_value = [{"Changes": [{"ResourceChange": {
+            "Action": "Add", "LogicalResourceId": "LearningKnowledgeBase", "ResourceType": "AWS::Bedrock::KnowledgeBase"}}]}]
+        environment = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
+                       "GITHUB_REF": DEPLOY.EXPECTED_REF}
+        with TemporaryDirectory() as directory, patch.object(DEPLOY, "ARTIFACT_DIRECTORY", Path(directory)), patch.dict(os.environ, environment, clear=True):
+            DEPLOY.package_and_deploy(client, "example-stack", "*")
+        arguments = client.create_change_set.call_args.kwargs
+        self.assertIn({"ParameterKey": "KnowledgeBaseSourcePrefix", "UsePreviousValue": True}, arguments["Parameters"])
+        self.assertEqual(arguments["ChangeSetType"], "UPDATE")
+        self.assertEqual(arguments["Capabilities"], ["CAPABILITY_NAMED_IAM"])
+        client.execute_change_set.assert_called_once_with(ChangeSetName="example-change-set")
+
+    def test_empty_change_set_is_a_successful_no_op(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.describe_stacks.return_value = {"Stacks": [{}]}
+        client.create_change_set.return_value = {"Id": "example-change-set"}
+        client.get_waiter.return_value.wait.side_effect = WaiterError(name="change_set_create_complete", reason="Failed", last_response={})
+        client.describe_change_set.return_value = {"Status": "FAILED", "StatusReason": "The submitted information didn't contain changes."}
+        environment = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
+                       "GITHUB_REF": DEPLOY.EXPECTED_REF}
+        with TemporaryDirectory() as directory, patch.object(DEPLOY, "ARTIFACT_DIRECTORY", Path(directory)), patch.dict(os.environ, environment, clear=True):
+            DEPLOY.package_and_deploy(client, "example-stack", "EXAMPLE123")
+        client.execute_change_set.assert_not_called()
+        client.delete_change_set.assert_called_once_with(ChangeSetName="example-change-set")
+
+    def test_replacement_change_set_is_not_executed(self):
+        from unittest.mock import Mock
+        client = Mock()
+        client.describe_stacks.return_value = {"Stacks": [{}]}
+        client.create_change_set.return_value = {"Id": "example-change-set"}
+        client.get_paginator.return_value.paginate.return_value = [{"Changes": [{"ResourceChange": {
+            "Action": "Modify", "LogicalResourceId": "KnowledgeBaseBucket", "ResourceType": "AWS::S3::Bucket", "Replacement": "Conditional"}}]}]
+        environment = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
+                       "GITHUB_REF": DEPLOY.EXPECTED_REF}
+        with TemporaryDirectory() as directory, patch.object(DEPLOY, "ARTIFACT_DIRECTORY", Path(directory)), patch.dict(os.environ, environment, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "migration"):
+                DEPLOY.package_and_deploy(client, "example-stack", "*")
+        client.execute_change_set.assert_not_called()
 
     def test_aws_access_errors_are_not_treated_as_missing_stack(self):
         from unittest.mock import Mock

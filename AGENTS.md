@@ -19,7 +19,7 @@
 - Author all infrastructure and CloudFormation resource definitions in YAML (`.yml` or `.yaml`), never JSON. Keep source files under `infrastructure/` and its `resources/` directory.
 - Serverless-generated state and build artifacts in `.serverless/` may use JSON. Do not manually edit or rename those tool-managed files; keep them ignored by Git. This exception does not apply to authored infrastructure definitions.
 - Define configurable project values once, at the top/global configuration level, before referencing them elsewhere.
-- Keep infrastructure settings in the top-level `custom` section of `infrastructure/serverless.yml`. Reference those settings from provider configuration and imported resource files instead of repeating literal values.
+- Keep infrastructure defaults in the top-level `Parameters` section of `infrastructure/parameters.yml`. Resource YAML uses native CloudFormation `Ref` and `Fn::Sub`; the optional Serverless entry point imports the same parameter file.
 - Keep application configuration in a shared configuration module when application code is added. Pass configuration into functions instead of introducing mutable global state.
 - Define workflow settings in workflow-level `env` or reference the project's existing configuration files, such as `infrastructure/.nvmrc`.
 - Keep dependency versions in their package manifests and lockfiles. Fixed AWS schema values and policy constants do not need to become configurable variables.

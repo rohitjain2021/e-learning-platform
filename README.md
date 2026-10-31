@@ -20,7 +20,7 @@ The **knowledge base** is the searchable collection of course content. RAG is th
 
 ![RAG architecture showing the user query flow, document ingestion, and GitHub Actions CI/CD with Serverless Framework](docs/images/rag-knowledge-base-architecture-cicd.png)
 
-**API Gateway and Lambda are both serverless AWS services:** API Gateway receives requests, and Lambda runs the Python backend without us managing servers. **Serverless Framework is the deployment tool** that configures these services through CloudFormation. It runs during deployment, outside the path of a user's question.
+**API Gateway and Lambda are both serverless AWS services:** API Gateway receives requests, and Lambda runs the Python backend without us managing servers. The diagram shows **Serverless Framework** as deployment tooling outside the path of a user's question. The current knowledge-base pipeline submits native YAML directly to **CloudFormation**; the optional Serverless entry point imports the same infrastructure definitions.
 
 ### 1. Prepare the learning materials
 
@@ -40,7 +40,7 @@ The top half of the diagram shows what happens when someone asks for help:
 1. The learner types a question in the **Streamlit app**.
 2. **Amazon API Gateway** receives the request and passes it to **AWS Lambda**.
 3. Lambda coordinates the work and retrieves relevant passages from the **Amazon Bedrock knowledge base** using the AWS SDK, Boto3.
-4. The retrieved passages—the **top K chunks**, meaning a selected number of the closest matches—provide context for a language model in **Amazon Bedrock**.
+4. The retrieved passagesâ€”the **top K chunks**, meaning a selected number of the closest matchesâ€”provide context for a language model in **Amazon Bedrock**.
 5. The model uses the question and those passages to generate an explanation.
 6. The answer returns to the learner in the app.
 
@@ -111,7 +111,7 @@ The root requirements file covers the frontend and local AWS development. For La
 
 ## Serverless Framework
 
-We use **Serverless Framework** to define and deploy the AWS Lambda backend and API Gateway configuration. The Node.js deployment tooling is kept with the infrastructure, separately from the Python application dependencies.
+The repository includes **Serverless Framework** tooling for backend and API Gateway work. The knowledge-base pipeline deploys native CloudFormation YAML directly and does not require a Serverless account or license. Node.js tooling is kept with the infrastructure, separately from the Python application dependencies.
 
 Use Node.js 24, then install the deployment tooling from the infrastructure directory:
 
@@ -121,7 +121,7 @@ npm ci
 Pop-Location
 ```
 
-The infrastructure component owns the Serverless configuration, dependency lockfile, and S3 resource definitions. See the [infrastructure guide](infrastructure/README.md) for deployment details. Serverless Framework v4 requires a Serverless account or license key for deployment.
+The infrastructure component owns the global CloudFormation parameters, resource YAML, optional Serverless configuration, and dependency lockfile. See the [infrastructure guide](infrastructure/README.md) for deployment details. Using the optional Serverless Framework v4 CLI separately requires its own authentication.
 
 ## Knowledge base document storage
 
@@ -133,11 +133,9 @@ The data source bucket is **`e-learning-platform-knowledge-base`**. Its infrastr
 - **Versioning:** Previous document versions are kept when files are overwritten or deleted normally.
 - **Retention:** CloudFormation retains the bucket and documents if the stack is deleted or the bucket resource is replaced.
 
-With Node.js 24, the npm dependencies, and AWS and Serverless credentials configured, deploy with:
+Deployments run through GitHub Actions after changes are pushed to `main` and all checks pass. Local deployment commands are blocked. The [infrastructure guide](infrastructure/README.md) describes the OIDC deployment role. No Serverless secret is needed by the CloudFormation pipeline.
 
-Deployments run through GitHub Actions after changes are pushed to `main` and all checks pass. Local deployment commands are blocked. The [infrastructure guide](infrastructure/README.md) describes the required OIDC role and Serverless authentication settings.
-
-Project settings are defined once in the `custom` section at the top of the infrastructure's Serverless configuration. Provider settings and infrastructure resources reference those global values. To change the bucket name, update `custom.knowledgeBaseBucketName` there.
+Project settings are defined once in the global `Parameters` section of `infrastructure/parameters.yml`. Infrastructure resources reference those values through CloudFormation. The optional Serverless entry point imports the same parameter definitions. Existing deployed parameter overrides are preserved during updates.
 
 Choose the region where the knowledge base will run. The bucket name is globally unique, so use it from one stack only. If another account already owns the name, update the global bucket name before deploying. A bucket created outside this stack must be imported rather than recreated.
 
@@ -155,7 +153,7 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests ta
 
 This checks dependency installation, frontend behavior with mocked responses, infrastructure YAML, and deployment safety. A deployment job runs only for trusted `main`-branch pushes or manual workflow runs after these checks pass.
 
-The deployment job uses GitHub OIDC, packages the Serverless configuration, validates the generated CloudFormation template, deploys it, and verifies the resulting knowledge base. Its readable YAML template and deployment summary are saved as workflow artifacts. Configure the project deployment role and Serverless authentication before enabling a successful deployment. Streamlit hosting is managed separately.
+The deployment job uses GitHub OIDC, merges and validates the native YAML template, checks and executes a CloudFormation change set, and verifies the resulting knowledge base. It rejects resource removals and possible replacements. Its readable YAML template and deployment summary are saved as workflow artifacts. The one-time deployment role is provisioned separately; the pipeline needs its ARN but no Serverless credential. Streamlit hosting is managed separately.
 
 ## What about keys and credentials?
 

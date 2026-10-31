@@ -1,0 +1,37 @@
+# Global infrastructure configuration shared by CloudFormation and Serverless.
+Parameters:
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  KnowledgeBaseBucketName:
+    Type: String
+    Default: e-learning-platform-knowledge-base
+  KnowledgeBaseStoragePurpose:
+    Type: String
+    Default: rag-knowledge-base-documents
+  KnowledgeBaseDescription:
+    Type: String
+    Default: Learning documents with managed indexing and on-demand Nova embeddings
+  KnowledgeBaseSourcePrefix:
+    Type: String
+    Default: demo/learning/
+  EmbeddingModelId:
+    Type: String
+    Default: amazon.nova-2-multimodal-embeddings-v1:0
+  EmbeddingDimensions:
+    Type: Number
+    Default: 1024
+  KnowledgeBaseLogRetentionDays:
+    Type: Number
+    Default: 30
+  KnowledgeBaseTrustResourceId:
+    Type: String
+    Default: '*'
+  KnowledgeBaseBootstrapTrustExpiresAt:
+    Type: String
+    Default: '1970-01-01T00:00:00Z'

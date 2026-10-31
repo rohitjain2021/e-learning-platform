@@ -1,20 +1,21 @@
 """GitHub Actions-only deployment orchestration; resource definitions stay in YAML."""
 
-import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import subprocess
+from uuid import uuid4
 
 import boto3
 from botocore.exceptions import ClientError
+from botocore.exceptions import WaiterError
 import yaml
 
 
-# Global configuration; component resource settings remain in serverless.yml.
+# Global configuration; infrastructure defaults are defined in parameters.yml.
 INFRASTRUCTURE_DIRECTORY = Path(__file__).resolve().parents[1]
 ARTIFACT_DIRECTORY = INFRASTRUCTURE_DIRECTORY / ".serverless"
-CONFIGURATION_FILE = INFRASTRUCTURE_DIRECTORY / "serverless.yml"
+CONFIGURATION_FILE = INFRASTRUCTURE_DIRECTORY / "parameters.yml"
+RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml")
 EXPECTED_REPOSITORY = "rohitjain2021/e-learning-platform"
 EXPECTED_REF = "refs/heads/main"
 BOOTSTRAP_MINUTES = 30
@@ -27,41 +28,102 @@ def require_pipeline():
             or os.environ.get("GITHUB_REPOSITORY") != EXPECTED_REPOSITORY
             or os.environ.get("GITHUB_REF") != EXPECTED_REF):
         raise RuntimeError("Deployment is allowed only in this repository's main-branch GitHub Actions pipeline.")
-    if not (os.environ.get("SERVERLESS_ACCESS_KEY") or os.environ.get("SERVERLESS_LICENSE_KEY")):
-        raise RuntimeError("Configure SERVERLESS_ACCESS_KEY or SERVERLESS_LICENSE_KEY in GitHub Actions secrets.")
 
 
-def stack_outputs(client, stack_name):
+def describe_stack(client, stack_name):
+    """Return existing stack metadata, distinguishing an absent stack from access errors."""
     try:
         stack = client.describe_stacks(StackName=stack_name)["Stacks"][0]
     except ClientError as error:
         if (error.response["Error"]["Code"] == "ValidationError"
                 and "does not exist" in error.response["Error"]["Message"]):
-            return {}
+            return None
         raise
     if stack["StackStatus"].endswith("_IN_PROGRESS"):
         raise RuntimeError("The stack already has an operation in progress.")
-    return {item["OutputKey"]: item["OutputValue"] for item in stack.get("Outputs", [])}
+    return stack
 
 
-def package_and_deploy(client, trust_id):
-    environment = dict(os.environ)
-    environment["KNOWLEDGE_BASE_TRUST_ID"] = trust_id
-    environment["KNOWLEDGE_BASE_BOOTSTRAP_EXPIRES_AT"] = (
+def stack_outputs(client, stack_name):
+    """Read output values after a stack operation has finished."""
+    stack = describe_stack(client, stack_name)
+    return {item["OutputKey"]: item["OutputValue"] for item in (stack or {}).get("Outputs", [])}
+
+
+def build_template():
+    """Merge native YAML sections without resolving CloudFormation intrinsics locally."""
+    template = {"AWSTemplateFormatVersion": "2010-09-09",
+                "Description": "E-learning knowledge base, document storage, and application logging"}
+    for path in [CONFIGURATION_FILE] + [INFRASTRUCTURE_DIRECTORY / "resources" / p for p in RESOURCE_FILES]:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for section, entries in document.items():
+            destination = template.setdefault(section, {})
+            duplicates = destination.keys() & entries.keys()
+            if duplicates:
+                raise ValueError(f"Duplicate {section} definitions: {sorted(duplicates)}")
+            destination.update(entries)
+    return template
+
+
+def validate_changes(changes):
+    """Prevent automatic removal or possible replacement of existing resources."""
+    for change in changes:
+        resource = change["ResourceChange"]
+        print(resource["Action"], resource["LogicalResourceId"], resource["ResourceType"])
+        if resource["Action"] == "Remove" or resource.get("Replacement", "False") != "False":
+            raise RuntimeError("Resource removal or replacement needs a separately reviewed migration.")
+
+
+def package_and_deploy(client, stack_name, trust_id, exists=True):
+    """Validate YAML and execute a checked change set, only from the trusted pipeline."""
+    require_pipeline()
+    template = build_template()
+    ARTIFACT_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    readable = ARTIFACT_DIRECTORY / "cloudformation-template-update-stack.yml"
+    body = yaml.safe_dump(template, sort_keys=False)
+    readable.write_text(body, encoding="utf-8")
+    client.validate_template(TemplateBody=body)
+    expires_at = (
         datetime.now(timezone.utc) + timedelta(minutes=BOOTSTRAP_MINUTES)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
-    environment["CI"] = "true"
-    base = ["npx", "--no-install", "serverless"]
-    options = ["--stage", STAGE, "--region", REGION]
-    subprocess.run(base + ["package"] + options, cwd=INFRASTRUCTURE_DIRECTORY,
-                   env=environment, check=True)
-    compiled = ARTIFACT_DIRECTORY / "cloudformation-template-update-stack.json"
-    template = json.loads(compiled.read_text(encoding="utf-8"))
-    readable = ARTIFACT_DIRECTORY / "cloudformation-template-update-stack.yml"
-    readable.write_text(yaml.safe_dump(template, sort_keys=False), encoding="utf-8")
-    client.validate_template(TemplateBody=readable.read_text(encoding="utf-8"))
-    subprocess.run(base + ["deploy", "--package", ".serverless"] + options,
-                   cwd=INFRASTRUCTURE_DIRECTORY, env=environment, check=True)
+    overrides = {"DeploymentStage": STAGE, "KnowledgeBaseTrustResourceId": trust_id,
+                 "KnowledgeBaseBootstrapTrustExpiresAt": expires_at if trust_id == "*" else "1970-01-01T00:00:00Z"}
+    parameters = [{"ParameterKey": key, "ParameterValue": value}
+                  for key, value in overrides.items()]
+    # Preserve deployed overrides on subsequent updates; new parameters use YAML defaults.
+    if exists:
+        previous = client.describe_stacks(StackName=stack_name)["Stacks"][0]
+        parameters += [{"ParameterKey": p["ParameterKey"], "UsePreviousValue": True}
+                       for p in previous.get("Parameters", [])
+                       if p["ParameterKey"] in template["Parameters"] and p["ParameterKey"] not in overrides]
+    change_set = client.create_change_set(
+        StackName=stack_name, ChangeSetName=f"github-{uuid4().hex}",
+        ChangeSetType="UPDATE" if exists else "CREATE", TemplateBody=body,
+        Parameters=parameters, Capabilities=["CAPABILITY_NAMED_IAM"],
+        Tags=[{"Key": "Project", "Value": template["Parameters"]["ProjectName"]["Default"]}],
+    )["Id"]
+    try:
+        client.get_waiter("change_set_create_complete").wait(
+            ChangeSetName=change_set, WaiterConfig={"Delay": 3, "MaxAttempts": 120})
+    except WaiterError:
+        result = client.describe_change_set(ChangeSetName=change_set)
+        reason = result.get("StatusReason", "")
+        if result["Status"] == "FAILED" and ("didn't contain changes" in reason or "No updates are to be performed" in reason):
+            client.delete_change_set(ChangeSetName=change_set)
+            print("CloudFormation: no infrastructure changes.")
+            return
+        raise RuntimeError(f"CloudFormation change set failed: {reason}")
+    pages = client.get_paginator("describe_change_set").paginate(ChangeSetName=change_set)
+    changes = [change for page in pages for change in page.get("Changes", [])]
+    validate_changes(changes)
+    client.execute_change_set(ChangeSetName=change_set)
+    waiter = "stack_update_complete" if exists else "stack_create_complete"
+    try:
+        client.get_waiter(waiter).wait(StackName=stack_name, WaiterConfig={"Delay": 5, "MaxAttempts": 480})
+    except WaiterError:
+        for event in client.describe_stack_events(StackName=stack_name)["StackEvents"][:20]:
+            print(event["LogicalResourceId"], event["ResourceStatus"], event.get("ResourceStatusReason", ""))
+        raise
 
 
 def verify(outputs):
@@ -99,17 +161,18 @@ def verify(outputs):
 
 def main():
     require_pipeline()
-    project_name = yaml.safe_load(CONFIGURATION_FILE.read_text(encoding="utf-8"))["custom"]["projectName"]
+    project_name = build_template()["Parameters"]["ProjectName"]["Default"]
     stack_name = f"{project_name}-{STAGE}"
     cloudformation = boto3.client("cloudformation", region_name=REGION)
-    previous = stack_outputs(cloudformation, stack_name)
+    previous_stack = describe_stack(cloudformation, stack_name)
+    previous = {item["OutputKey"]: item["OutputValue"] for item in (previous_stack or {}).get("Outputs", [])}
     trust_id = previous.get("LearningKnowledgeBaseId", "*")
-    package_and_deploy(cloudformation, trust_id)
+    package_and_deploy(cloudformation, stack_name, trust_id, exists=previous_stack is not None)
     deployed = stack_outputs(cloudformation, stack_name)
     exact_id = deployed["LearningKnowledgeBaseId"]
     if trust_id != exact_id:
         # First deployment uses expiring trust; immediately remove the wildcard.
-        package_and_deploy(cloudformation, exact_id)
+        package_and_deploy(cloudformation, stack_name, exact_id)
         deployed = stack_outputs(cloudformation, stack_name)
     verify(deployed)
 

@@ -26,7 +26,7 @@ UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, 
 
 
 def main():
-    files = [INFRASTRUCTURE_DIRECTORY / "serverless.yml"]
+    files = [INFRASTRUCTURE_DIRECTORY / "serverless.yml", INFRASTRUCTURE_DIRECTORY / "parameters.yml"]
     files += sorted((INFRASTRUCTURE_DIRECTORY / "resources").glob("*.yml"))
     files += sorted((INFRASTRUCTURE_DIRECTORY / "bootstrap").glob("*.yml"))
     files += sorted((INFRASTRUCTURE_DIRECTORY.parent / ".github" / "workflows").glob("*.yml"))
