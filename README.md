@@ -18,7 +18,9 @@ The **knowledge base** is the searchable collection of course content. RAG is th
 
 ## Architecture
 
-![RAG knowledge base architecture showing the user query flow and document ingestion pipeline](docs/images/rag-knowledge-base-architecture.png)
+![RAG architecture showing the user query flow, document ingestion, and GitHub Actions CI/CD with Serverless Framework](docs/images/rag-knowledge-base-architecture-cicd.png)
+
+**API Gateway and Lambda are both serverless AWS services:** API Gateway receives requests, and Lambda runs the Python backend without us managing servers. **Serverless Framework is the deployment tool** that configures these services through CloudFormation. It runs during deployment, outside the path of a user's question.
 
 ### 1. Prepare the learning materials
 
