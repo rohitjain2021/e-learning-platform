@@ -1,0 +1,39 @@
+MAPLE GROVE TEACHER PATHWAY - HOURS AND SUBMISSIONS
+Document ID: DEMO-02
+Version: 1.0
+Classification: Fictional demonstration content; shared with all demo users.
+This is fictional sample content, not a real organizational or licensure policy.
+
+HOURS RULES
+The fictional program requires 240 approved hours of supervised classroom
+practice. Learners should plan for about 20 eligible hours each week over 12
+weeks. Actual approved hours determine progress; the weekly plan is not approval.
+
+WHAT COUNTS
+Eligible activities include supporting a supervised lesson, observing classroom
+instruction with a mentor, and helping with classroom assessment activities.
+The placement must be active, and the mentor must be able to confirm the work.
+Only time spent on eligible supervised activities may be submitted.
+
+WHAT DOES NOT COUNT
+Travel, lunch breaks, orientation, unsupervised preparation, and online coursework
+do not count toward the classroom practice target. Coursework can support learning
+but must not be added to classroom practice hours. Do not count the same time twice.
+
+HOW TO SUBMIT
+For each entry, record the activity date, duration, activity category, a short
+description, and the assigned mentor. Submit weekly entries by Friday at 5 p.m.
+in the placement's local time. Do not include student names, student records,
+photographs of children, or other personal information in descriptions.
+
+HOW HOURS BECOME APPROVED
+A newly submitted entry has Pending status. The mentor aims to review it within
+two business days. Only Approved entries count toward the practice target.
+Changes Requested entries must be corrected and resubmitted; they do not count
+until approved. Rejected entries also do not count.
+
+CORRECTIONS AND DELAYS
+Explain the change when correcting an entry. If a mistake is found after approval,
+ask the administrator to reopen the entry; do not silently replace its history.
+For pending entries older than three business days, follow the escalation process
+in 04-mentor-review-and-escalation.txt.

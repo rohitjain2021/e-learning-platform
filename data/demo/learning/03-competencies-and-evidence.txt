@@ -1,0 +1,40 @@
+MAPLE GROVE TEACHER PATHWAY - COMPETENCIES AND EVIDENCE
+Document ID: DEMO-03
+Version: 1.0
+Classification: Fictional demonstration content; shared with all demo users.
+This is fictional sample content, not a real organizational or licensure policy.
+
+ASSESSMENT RULE
+The fictional program has four competencies. Each requires evidence and an
+explicit mentor sign-off. Approved practice hours do not automatically approve a
+competency. A learner must meet both the hours target and competency requirements.
+
+C1: LESSON PLANNING
+The learner prepares a lesson with a learning objective, activities, materials,
+and a way to check understanding. Evidence is one anonymized lesson plan and
+mentor feedback. The mentor checks that the activities match the objective.
+
+C2: CLASSROOM ROUTINES
+The learner demonstrates clear instructions, an organized transition between
+activities, and a respectful classroom routine. Evidence is a mentor observation
+record describing the activity and feedback. No student names are needed.
+
+C3: INCLUSIVE INSTRUCTION
+The learner explains how a lesson can support different learning needs. Evidence
+is an anonymized adapted lesson plan and a short reflection explaining the
+changes. The mentor checks the connection between the adaptation and the need.
+
+C4: CHECKING UNDERSTANDING
+The learner uses a short assessment and explains how its results would inform
+the next lesson. Evidence is an anonymized assessment example, a brief reflection,
+and a mentor observation. Do not upload identifiable student work or records.
+
+EVIDENCE WORKFLOW
+The learner submits evidence against the relevant competency. The mentor reviews
+it, requests changes if needed, or signs off the competency. Until sign-off, the
+competency remains incomplete even when evidence has been uploaded.
+
+FINAL CHECK
+All four competencies must be signed off. The administrator also checks approved
+practice hours and outstanding corrections before marking program completion.
+These demo competency names are illustrative, not an official teaching standard.

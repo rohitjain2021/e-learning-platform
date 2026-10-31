@@ -69,6 +69,10 @@ The employee can use those links to check the information or read more. They do 
 
 RAG helps ground answers in source material, but it does not guarantee correctness. A useful implementation should show the supporting sources and acknowledge when the documents do not contain enough information.
 
+## Sample learning program demo
+
+The demo uses five short documents from a fictional learning program. They cover onboarding, practice hours, skills, mentor reviews, and learner progress. Users can ask questions and receive answers with supporting sources. All program rules and records are fictional.
+
 ## Python dependencies
 
 Use Python 3.12 and install the Python packages listed in [requirements.txt](requirements.txt) in a virtual environment:

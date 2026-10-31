@@ -1,0 +1,39 @@
+MAPLE GROVE TEACHER PATHWAY - MENTOR REVIEW AND ESCALATION
+Document ID: DEMO-04
+Version: 1.0
+Classification: Fictional demonstration content; shared with all demo users.
+This is fictional sample content, not a real organizational or licensure policy.
+
+REVIEW OWNERSHIP
+The assigned mentor reviews a learner's hours and competency evidence. Mentors
+review only learners assigned to them. Learners cannot approve their own work.
+The program administrator manages mentor assignments and unresolved issues.
+
+REVIEW TARGET
+The mentor aims to review submitted hours and evidence within two business days.
+Business days are Monday through Friday, excluding the placement's holidays.
+The learner can see a submission's status while waiting for review.
+
+POSSIBLE OUTCOMES
+Approved means the mentor has accepted an hours entry. Signed Off means the
+mentor has accepted a competency. Changes Requested means the learner must fix
+the submission and resubmit it. Rejected means the submitted activity is not
+accepted. Pending means no review decision has been recorded.
+
+CORRECTION PROCESS
+For Changes Requested, the mentor explains what is missing. The learner corrects
+the original submission and adds a response explaining the update. The mentor
+reviews it again. Resubmission does not make an entry approved automatically.
+Keep the original submission and review history available for audit.
+
+WHEN TO ESCALATE
+If an entry remains pending for more than three business days, the learner sends
+the submission ID to the program administrator through the demo support form.
+The administrator contacts the mentor or assigns a replacement reviewer within
+one business day. Escalation does not automatically approve hours or competencies.
+
+MENTOR ABSENCE
+If the assigned mentor is unavailable, the administrator assigns an authorized
+replacement. Learners should not change the reviewer themselves or submit the
+same activity again to bypass the queue. Administrative reassignment should be
+recorded with the reason and the identity of the person making the change.

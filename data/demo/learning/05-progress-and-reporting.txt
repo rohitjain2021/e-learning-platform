@@ -1,0 +1,39 @@
+MAPLE GROVE TEACHER PATHWAY - PROGRESS AND REPORTING
+Document ID: DEMO-05
+Version: 1.0
+Classification: Fictional demonstration content; shared with all demo users.
+This is fictional sample content, not an actual learner record.
+
+SNAPSHOT SCOPE
+This is a fixed example snapshot at the end of program week 9. It does not update
+automatically. An answer about this record must say it refers to the demo snapshot,
+rather than implying it is a live report or a query of production learner data.
+
+FICTIONAL LEARNER DEMO-001
+Program: Maple Grove Teacher Pathway.
+Approved supervised practice hours: 180.
+Pending supervised practice hours: 20.
+Required approved practice hours: 240.
+Competencies signed off: C1 Lesson Planning, C2 Classroom Routines, and
+C3 Inclusive Instruction.
+Competency incomplete: C4 Checking Understanding. Evidence has been submitted
+but has not been signed off.
+Final administrator completion review: Not completed.
+
+HOW TO INTERPRET THE SNAPSHOT
+DEMO-001 has 60 approved hours remaining and has completed 75 percent of the
+approved-hours target. The 20 pending hours do not count toward completion.
+If all 20 pending hours are approved, the approved total becomes 200 and the
+remaining requirement becomes 40. That is a hypothetical outcome, not an approval.
+The learner has three of four competency sign-offs and is not yet complete.
+
+PROGRAM REPORTING
+A program progress report includes approved hours, pending hours, competency
+sign-offs, outstanding reviews, and completion review status. Keep approved and
+pending totals separate. For this demo, the administrator prepares the report
+after the weekly review cycle. This document defines no funding eligibility rules.
+
+WHAT THIS DOES NOT PROVE
+The snapshot does not establish a teaching license, funding eligibility, payment
+entitlement, or a guaranteed completion date. Questions about those topics need
+additional authoritative documents or a responsible program administrator.

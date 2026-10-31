@@ -1,0 +1,42 @@
+MAPLE GROVE TEACHER PATHWAY - PROGRAM OVERVIEW
+Document ID: DEMO-01
+Version: 1.0
+Classification: Fictional demonstration content; shared with all demo users.
+This is fictional sample content, not a real organizational or licensure policy.
+
+PROGRAM FACTS
+Organization: Maple Grove Learning Partnership, a fictional organization.
+Program: Maple Grove Teacher Pathway.
+Length: 12 weeks.
+Practice target: 240 approved hours of supervised classroom practice.
+Competency target: Four signed-off competencies.
+These targets are invented for this demo. They are not teacher certification,
+accreditation, or state licensing requirements.
+
+PURPOSE
+The program helps classroom support staff practice teaching skills while working
+with a mentor. The assistant answers questions using the program documents.
+It does not decide whether someone is qualified to teach.
+
+GETTING STARTED
+The program administrator invites the learner and assigns a mentor. The learner
+accepts the invitation, checks the program assignment, and completes orientation.
+The administrator then activates the placement. Classroom practice can be logged
+only after placement activation. Orientation itself does not count as practice.
+
+WHO DOES WHAT
+Learners submit practice hours and evidence of their skills. Mentors review hours
+and assess evidence for learners assigned to them. The program administrator
+manages invitations, assignments, escalations, and completion checks.
+
+COMPLETION
+Finishing the 12-week period alone does not complete the program. The learner
+needs 240 approved practice hours, all four competency sign-offs, and a final
+administrator review. Pending hours and unreviewed evidence do not satisfy these
+requirements. Completion of this fictional program is not a teaching license.
+
+RELATED DOCUMENTS
+02-hours-and-submissions.txt explains eligible hours and submission deadlines.
+03-competencies-and-evidence.txt explains the four competencies.
+04-mentor-review-and-escalation.txt explains review and correction workflows.
+05-progress-and-reporting.txt contains a fictional learner progress snapshot.
