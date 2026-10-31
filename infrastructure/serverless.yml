@@ -5,17 +5,41 @@ custom:
   deploymentStage: ${opt:stage, 'dev'}
   knowledgeBaseBucketName: ${self:custom.projectName}-knowledge-base
   knowledgeBaseStoragePurpose: rag-knowledge-base-documents
+  knowledgeBaseName: ${self:custom.projectName}-${self:custom.deploymentStage}-knowledge-base
+  knowledgeBaseDescription: Learning documents with managed indexing and on-demand Nova embeddings
+  knowledgeBaseSourcePrefix: demo/learning/
+  knowledgeBaseDataSourceName: ${self:custom.projectName}-${self:custom.deploymentStage}-learning-documents
+  knowledgeBaseServiceRoleName: ${self:custom.projectName}-${self:custom.deploymentStage}-bedrock-kb-service
+  # Supplied by the GitHub Actions deployment script; never persist a deleted ID.
+  knowledgeBaseTrustResourceId: ${env:KNOWLEDGE_BASE_TRUST_ID}
+  knowledgeBaseBootstrapTrustExpiresAt: ${env:KNOWLEDGE_BASE_BOOTSTRAP_EXPIRES_AT, '1970-01-01T00:00:00Z'}
+  deploymentArtifactBucketName: serverless-framework-deployments-us-east-1-5b907a5f-c0ac
+  embeddingModelId: amazon.nova-2-multimodal-embeddings-v1:0
+  embeddingDimensions: 1024
+  knowledgeBaseLogGroupName: /aws/vendedlogs/bedrock/${self:custom.projectName}/${self:custom.deploymentStage}/knowledge-base
+  knowledgeBaseLogRetentionDays: 30
+  knowledgeBaseLogPolicyName: ${self:custom.projectName}-${self:custom.deploymentStage}-kb-logs
+  knowledgeBaseLogSourceName: ${self:custom.projectName}-${self:custom.deploymentStage}-kb-application-source
+  knowledgeBaseLogDestinationName: ${self:custom.projectName}-${self:custom.deploymentStage}-kb-application-destination
 
 service: ${self:custom.projectName}
 frameworkVersion: '4'
 configValidationMode: error
 
+plugins:
+  - ./plugins/pipeline-only.cjs
+
 provider:
   name: aws
   region: ${self:custom.awsRegion}
   stage: ${self:custom.deploymentStage}
+  deploymentBucket:
+    name: ${self:custom.deploymentArtifactBucketName}
   stackTags:
     Project: ${self:custom.projectName}
 
-# CloudFormation resources for the documents used by the RAG knowledge base.
-resources: ${file(resources/knowledge-base-storage.yml)}
+# YAML resource files are merged into one CloudFormation stack.
+resources:
+  - ${file(resources/knowledge-base-storage.yml)}
+  - ${file(resources/knowledge-base.yml)}
+  - ${file(resources/knowledge-base-logging.yml)}

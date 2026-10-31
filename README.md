@@ -30,8 +30,8 @@ The documents can come from different sources, such as Google Drive, SharePoint,
 
 1. **Store documents in Amazon S3.** This is the storage location for the learning materials.
 2. **Split the content into chunks.** Smaller passages make it easier to find the specific information needed for a question.
-3. **Create embeddings with Amazon Titan Text Embeddings V2.** An embedding is a list of numbers that represents the meaning of a passage. It helps the system find related ideas even when the learner uses different words.
-4. **Store the embeddings in Amazon OpenSearch.** The vector database supports searching for passages with meanings similar to the learner's question. Amazon Bedrock Knowledge Bases connects the documents and the search process.
+3. **Create embeddings with Amazon Nova Multimodal Embeddings.** An embedding is a list of numbers that represents the meaning of a passage. It helps the system find related ideas even when the learner uses different words.
+4. **Store and index the embeddings in the managed knowledge base.** Amazon Bedrock manages vector storage, indexing, and retrieval. The infrastructure uses this managed storage rather than a separate OpenSearch collection shown in the diagram.
 
 ### 2. Answer a learner's question
 
@@ -135,25 +135,27 @@ The data source bucket is **`e-learning-platform-knowledge-base`**. Its infrastr
 
 With Node.js 24, the npm dependencies, and AWS and Serverless credentials configured, deploy with:
 
-```powershell
-Push-Location infrastructure
-npx serverless deploy --stage dev --region us-east-1
-Pop-Location
-```
+Deployments run through GitHub Actions after changes are pushed to `main` and all checks pass. Local deployment commands are blocked. The [infrastructure guide](infrastructure/README.md) describes the required OIDC role and Serverless authentication settings.
 
 Project settings are defined once in the `custom` section at the top of the infrastructure's Serverless configuration. Provider settings and infrastructure resources reference those global values. To change the bucket name, update `custom.knowledgeBaseBucketName` there.
 
 Choose the region where the knowledge base will run. The bucket name is globally unique, so use it from one stack only. If another account already owns the name, update the global bucket name before deploying. A bucket created outside this stack must be imported rather than recreated.
 
-The stack outputs the bucket name and ARN. This creates document storage; connecting it to a Bedrock knowledge base requires a data source and a knowledge base service role with access to the bucket.
+The stack outputs the bucket name and ARN, along with the managed knowledge base and data source IDs.
+
+## Managed knowledge base
+
+The infrastructure defines a managed Amazon Bedrock knowledge base using Amazon Nova Multimodal Embeddings with on-demand inference. Bedrock manages the vector storage and indexing. The S3 connector is limited to the project's demo-document prefix, uses default chunking, and has no automatic sync schedule.
+
+The dedicated service role can read only that source prefix and invoke the selected embedding model. The pipeline restricts its trust to the exact knowledge base after creation. Application log delivery targets `/aws/vendedlogs/bedrock/e-learning-platform/dev/knowledge-base` with 30-day retention. See the [infrastructure guide](infrastructure/README.md) for configuration details.
 
 ## GitHub Actions pipeline
 
 The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests targeting `main`, pushes to `main`, and manual runs. It installs the Python packages, checks for dependency conflicts, verifies the main imports, runs frontend and API-client tests, and installs and checks the Serverless Framework dependency.
 
-This checks dependency installation and frontend behavior with mocked responses. AWS deployment and Streamlit hosting are configured separately.
+This checks dependency installation, frontend behavior with mocked responses, infrastructure YAML, and deployment safety. A deployment job runs only for trusted `main`-branch pushes or manual workflow runs after these checks pass.
 
-For deployment, the next step is a separate workflow that uses GitHub OIDC to assume an AWS deployment role, packages the backend, and runs `serverless deploy`. That workflow will need the AWS region, deployment role, knowledge base configuration, and Serverless authentication configured first.
+The deployment job uses GitHub OIDC, packages the Serverless configuration, validates the generated CloudFormation template, deploys it, and verifies the resulting knowledge base. Its readable YAML template and deployment summary are saved as workflow artifacts. Configure the project deployment role and Serverless authentication before enabling a successful deployment. Streamlit hosting is managed separately.
 
 ## What about keys and credentials?
 

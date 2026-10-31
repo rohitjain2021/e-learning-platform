@@ -13,6 +13,9 @@
 
 ## Configuration
 
+- All AWS creation and updates must run through GitHub Actions using the checked-in YAML and CloudFormation. Do not run local deployment commands or create/update AWS resources directly. Read-only inspection and local validation are allowed. Destructive cleanup requires an explicit user instruction, such as the authorized rollback of the direct knowledge-base deployment.
+- GitHub Actions is the chosen CI/CD provider for this repository. Run deployment only for trusted main-branch code after checks pass, using short-lived AWS OIDC credentials. Provision deployment-role prerequisites through an approved account bootstrap process from checked-in YAML, not ad-hoc local IAM changes.
+
 - Author all infrastructure and CloudFormation resource definitions in YAML (`.yml` or `.yaml`), never JSON. Keep source files under `infrastructure/` and its `resources/` directory.
 - Serverless-generated state and build artifacts in `.serverless/` may use JSON. Do not manually edit or rename those tool-managed files; keep them ignored by Git. This exception does not apply to authored infrastructure definitions.
 - Define configurable project values once, at the top/global configuration level, before referencing them elsewhere.

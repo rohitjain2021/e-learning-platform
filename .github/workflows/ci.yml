@@ -1,4 +1,4 @@
-name: Frontend and dependency checks
+name: Check and deploy
 
 on:
   push:
@@ -15,6 +15,8 @@ env:
   FRONTEND_DIRECTORY: streamlit-ui
   BACKEND_DIRECTORY: backend
   INFRASTRUCTURE_DIRECTORY: infrastructure
+  AWS_REGION: us-east-1
+  DEPLOYMENT_STAGE: dev
 
 jobs:
   dependencies:
@@ -36,9 +38,15 @@ jobs:
             requirements.txt
             ${{ env.FRONTEND_DIRECTORY }}/requirements.txt
             ${{ env.BACKEND_DIRECTORY }}/requirements.txt
+            ${{ env.INFRASTRUCTURE_DIRECTORY }}/requirements-dev.txt
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt -r infrastructure/requirements-dev.txt
+
+      - name: Validate infrastructure YAML and deployment guards
+        run: |
+          python infrastructure/scripts/validate.py
+          python -m unittest discover -s infrastructure/tests -v
 
       - name: Check Python dependencies
         run: |
@@ -63,3 +71,80 @@ jobs:
       - name: Check Serverless dependency
         working-directory: ${{ env.INFRASTRUCTURE_DIRECTORY }}
         run: npm ls serverless --depth=0
+
+      - name: Test the pipeline-only deployment guard
+        run: node --test infrastructure/tests/pipeline-guard.test.cjs
+
+  deploy:
+    name: Deploy infrastructure through CloudFormation
+    needs: dependencies
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: e-learning-platform-dev-deployment
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CI: 'true'
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_ACCESS_KEY }}
+      SERVERLESS_LICENSE_KEY: ${{ secrets.SERVERLESS_LICENSE_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Check deployment configuration
+        shell: bash
+        run: |
+          if [ -z "$AWS_DEPLOY_ROLE_ARN" ]; then
+            echo "::error::Set the AWS_DEPLOY_ROLE_ARN repository variable after the approved OIDC bootstrap."
+            exit 1
+          fi
+          if [ -z "$SERVERLESS_ACCESS_KEY" ] && [ -z "$SERVERLESS_LICENSE_KEY" ]; then
+            echo "::error::Set SERVERLESS_ACCESS_KEY or SERVERLESS_LICENSE_KEY in Actions secrets."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ${{ env.INFRASTRUCTURE_DIRECTORY }}/.nvmrc
+          cache: npm
+          cache-dependency-path: ${{ env.INFRASTRUCTURE_DIRECTORY }}/package-lock.json
+
+      - name: Assume the project deployment role through OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-e-learning-deploy
+
+      - name: Install deployment tooling
+        run: |
+          python -m pip install -r backend/requirements.txt -r infrastructure/requirements-dev.txt
+          npm ci --prefix infrastructure --no-audit --no-fund
+
+      - name: Package, validate, deploy, and verify
+        run: python infrastructure/scripts/deploy.py
+
+      - name: Upload readable deployment templates and summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infrastructure-${{ github.sha }}
+          path: |
+            infrastructure/.serverless/cloudformation-template-update-stack.yml
+            infrastructure/.serverless/deployment-summary.yml
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7

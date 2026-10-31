@@ -1,0 +1,67 @@
+Resources:
+  KnowledgeBaseApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: ${self:custom.knowledgeBaseLogGroupName}
+      RetentionInDays: ${self:custom.knowledgeBaseLogRetentionDays}
+      Tags:
+        - Key: Project
+          Value: ${self:custom.projectName}
+
+  KnowledgeBaseApplicationLogPolicy:
+    Type: AWS::Logs::ResourcePolicy
+    Properties:
+      PolicyName: ${self:custom.knowledgeBaseLogPolicyName}
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DeliverKnowledgeBaseApplicationLogs
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              Fn::GetAtt: [KnowledgeBaseApplicationLogGroup, Arn]
+            Condition:
+              StringEquals:
+                aws:SourceAccount:
+                  Ref: AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+
+  KnowledgeBaseApplicationLogSource:
+    Type: AWS::Logs::DeliverySource
+    Properties:
+      Name: ${self:custom.knowledgeBaseLogSourceName}
+      LogType: APPLICATION_LOGS
+      ResourceArn:
+        Fn::GetAtt: [LearningKnowledgeBase, KnowledgeBaseArn]
+
+  KnowledgeBaseApplicationLogDestination:
+    Type: AWS::Logs::DeliveryDestination
+    Properties:
+      Name: ${self:custom.knowledgeBaseLogDestinationName}
+      DestinationResourceArn:
+        Fn::GetAtt: [KnowledgeBaseApplicationLogGroup, Arn]
+      OutputFormat: json
+
+  KnowledgeBaseApplicationLogDelivery:
+    Type: AWS::Logs::Delivery
+    Properties:
+      DeliverySourceName: ${self:custom.knowledgeBaseLogSourceName}
+      DeliveryDestinationArn:
+        Fn::GetAtt: [KnowledgeBaseApplicationLogDestination, Arn]
+    # The source name is literal configuration; explicitly enforce creation order.
+    DependsOn:
+      - KnowledgeBaseApplicationLogPolicy
+      - KnowledgeBaseApplicationLogSource
+
+Outputs:
+  KnowledgeBaseApplicationLogGroupName:
+    Value:
+      Ref: KnowledgeBaseApplicationLogGroup

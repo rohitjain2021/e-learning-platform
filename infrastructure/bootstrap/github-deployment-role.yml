@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Project-scoped GitHub Actions deployment role; apply only through the approved account bootstrap process
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  GitHubOidcProviderArn:
+    Type: String
+    Description: Existing account GitHub OIDC provider ARN
+    AllowedPattern: 'arn:aws[a-z-]*:iam::[0-9]{12}:oidc-provider/token.actions.githubusercontent.com'
+  GitHubOidcSubject:
+    Type: String
+    Description: Exact main-branch OIDC subject for this repository; include immutable IDs when enabled
+    AllowedPattern: 'repo:rohitjain2021(@[0-9]+)?/e-learning-platform(@[0-9]+)?:ref:refs/heads/main'
+  DeploymentArtifactBucketName:
+    Type: String
+    Default: serverless-framework-deployments-us-east-1-5b907a5f-c0ac
+  DocumentBucketName:
+    Type: String
+    Default: e-learning-platform-knowledge-base
+
+Resources:
+  GitHubDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-github-deploy
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated:
+                Ref: GitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub:
+                  Ref: GitHubOidcSubject
+      Policies:
+        - PolicyName: ProjectInfrastructureDeployment
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ProjectStack
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:ListStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetStackPolicy
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                Resource:
+                  - Fn::Sub: arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-${DeploymentStage}/*
+                  - Fn::Sub: arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*/*
+              - Sid: ValidateCloudFormation
+                Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: '*'
+              - Sid: ProjectArtifactBucketMetadata
+                Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetBucketVersioning
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:s3:::${DeploymentArtifactBucketName}
+              - Sid: ListProjectArtifacts
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:s3:::${DeploymentArtifactBucketName}
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      Fn::Sub: serverless/${ProjectName}/${DeploymentStage}*
+              - Sid: ManageProjectArtifacts
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:s3:::${DeploymentArtifactBucketName}/serverless/${ProjectName}/${DeploymentStage}/*
+              - Sid: ConfigureDocumentBucket
+                Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:GetBucketPolicy
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:GetBucketTagging
+                  - s3:PutBucketTagging
+                  - s3:GetBucketVersioning
+                  - s3:PutBucketVersioning
+                  - s3:GetEncryptionConfiguration
+                  - s3:PutEncryptionConfiguration
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketOwnershipControls
+                  - s3:PutBucketOwnershipControls
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:s3:::${DocumentBucketName}
+              - Sid: ManageOnlyKnowledgeBaseServiceRole
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${DeploymentStage}-bedrock-kb-service
+              - Sid: PassKnowledgeBaseRoleOnlyToBedrock
+                Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-${DeploymentStage}-bedrock-kb-service
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: bedrock.amazonaws.com
+              - Sid: ManageKnowledgeBaseResources
+                Effect: Allow
+                Action:
+                  - bedrock:CreateKnowledgeBase
+                  - bedrock:UpdateKnowledgeBase
+                  - bedrock:DeleteKnowledgeBase
+                  - bedrock:GetKnowledgeBase
+                  - bedrock:CreateDataSource
+                  - bedrock:UpdateDataSource
+                  - bedrock:DeleteDataSource
+                  - bedrock:GetDataSource
+                  - bedrock:ListDataSources
+                  - bedrock:TagResource
+                  - bedrock:UntagResource
+                  - bedrock:ListTagsForResource
+                  - bedrock:AllowVendedLogDeliveryForResource
+                Resource:
+                  - Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*
+              - Sid: ProjectLogGroup
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DescribeLogStreams
+                  - logs:PutRetentionPolicy
+                  - logs:DeleteRetentionPolicy
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:ListTagsForResource
+                Resource:
+                  - Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/bedrock/${ProjectName}/${DeploymentStage}/knowledge-base
+                  - Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/vendedlogs/bedrock/${ProjectName}/${DeploymentStage}/knowledge-base:*
+              - Sid: ProjectLogDelivery
+                Effect: Allow
+                Action:
+                  - logs:PutDeliverySource
+                  - logs:GetDeliverySource
+                  - logs:DeleteDeliverySource
+                  - logs:PutDeliveryDestination
+                  - logs:GetDeliveryDestination
+                  - logs:DeleteDeliveryDestination
+                  - logs:PutDeliveryDestinationPolicy
+                  - logs:GetDeliveryDestinationPolicy
+                  - logs:DeleteDeliveryDestinationPolicy
+                  - logs:CreateDelivery
+                  - logs:GetDelivery
+                  - logs:DeleteDelivery
+                  - logs:UpdateDeliveryConfiguration
+                  - logs:TagResource
+                  - logs:UntagResource
+                  - logs:ListTagsForResource
+                Resource:
+                  - Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:${ProjectName}-${DeploymentStage}-kb-application-source
+                  - Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:delivery-destination:${ProjectName}-${DeploymentStage}-kb-application-destination
+                  - Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:delivery:*
+              - Sid: LogDeliveryDiscoveryAndAccountPolicy
+                Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeDeliverySources
+                  - logs:DescribeDeliveryDestinations
+                  - logs:DescribeDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DeleteResourcePolicy
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion:
+                      Ref: AWS::Region
+
+Outputs:
+  DeploymentRoleArn:
+    Value:
+      Fn::GetAtt: [GitHubDeploymentRole, Arn]
