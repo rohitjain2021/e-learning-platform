@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlsplit
 
@@ -16,6 +17,21 @@ DEFAULT_API_TIMEOUT_SECONDS = 30
 CONNECT_TIMEOUT_SECONDS = 5
 MAX_API_TIMEOUT_SECONDS = 120
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+UI_DIRECTORY = Path(__file__).resolve().parent
+ASSETS_DIRECTORY = UI_DIRECTORY / "assets"
+DEMO_DOCUMENT_DIRECTORY = UI_DIRECTORY.parent / "data" / "demo" / "learning"
+DOCUMENT_CATALOG = (
+    ("01-program-overview.txt", "Program overview", "Your program, people, and first steps"),
+    ("02-hours-and-submissions.txt", "Hours & submissions", "Tracking, deadlines, and requirements"),
+    ("03-competencies-and-evidence.txt", "Competencies & evidence", "Evidence requirements and examples"),
+    ("04-mentor-review-and-escalation.txt", "Mentor review guide", "How reviews work and what to expect"),
+    ("05-progress-and-reporting.txt", "Progress & reporting", "Understand progress and next steps"),
+)
+SUGGESTED_QUESTIONS = (
+    "Do pending practice hours count toward completion?",
+    "When should I submit my weekly hours?",
+    "What evidence do I need for a competency review?",
+)
 
 
 @dataclass(frozen=True)

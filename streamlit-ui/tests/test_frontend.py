@@ -126,13 +126,30 @@ class StreamlitPageTests(unittest.TestCase):
         with patch("api_client.requests.post", return_value=response({"answer": TEST_ANSWER})):
             app.text_area[0].set_value(TEST_QUESTION)
             app.button[0].click().run()
-        self.assertTrue(app.subheader)
+        self.assertIn(TEST_ANSWER, [item.value for item in app.text])
         with patch("api_client.requests.post", side_effect=requests.Timeout):
             app.text_area[0].set_value("What evidence is required?")
             app.button[0].click().run()
         self.assertIn("too long", app.error[0].value)
-        self.assertFalse(app.subheader)
+        self.assertNotIn(TEST_ANSWER, [item.value for item in app.text])
         self.assertFalse(app.exception)
+
+    def test_suggestion_fills_question_without_calling_api(self):
+        app = AppTest.from_file(APP_PATH).run()
+        with patch("api_client.requests.post") as post:
+            app.button(key="suggestion_0").click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(app.text_area[0].value, "Do pending practice hours count toward completion?")
+        post.assert_not_called()
+
+    def test_document_library_navigation_and_reader(self):
+        app = AppTest.from_file(APP_PATH).run()
+        app.radio[0].set_value("Documents").run()
+        self.assertFalse(app.exception)
+        self.assertFalse(app.text_area)
+        app.button(key="read_document_0").click().run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any("PROGRAM FACTS" in item.value for item in app.text))
 
 
 if __name__ == "__main__":
