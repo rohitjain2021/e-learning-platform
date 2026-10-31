@@ -73,6 +73,10 @@ RAG helps ground answers in source material, but it does not guarantee correctne
 
 The demo uses five short documents from a fictional learning program. They cover onboarding, practice hours, skills, mentor reviews, and learner progress. Users can ask questions and receive answers with supporting sources. All program rules and records are fictional.
 
+## Ask questions in the app
+
+The Streamlit interface lets users enter a question, read the answer, and open the supporting sources. It shows a loading indicator while waiting and clear messages when a request fails. Follow the [frontend setup instructions](docs/frontend-setup.md) to run it locally, configure the backend connection, or host it on Streamlit Community Cloud.
+
 ## Python dependencies
 
 Use Python 3.12 and install the Python packages listed in [requirements.txt](requirements.txt) in a virtual environment:
@@ -127,9 +131,9 @@ The stack outputs the bucket name and ARN. This creates document storage; connec
 
 ## GitHub Actions pipeline
 
-The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests targeting `main`, pushes to `main`, and manual runs. It installs the Python packages, checks for dependency conflicts, verifies the main imports, and installs and checks the Serverless Framework dependency.
+The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests targeting `main`, pushes to `main`, and manual runs. It installs the Python packages, checks for dependency conflicts, verifies the main imports, runs frontend and API-client tests, and installs and checks the Serverless Framework dependency.
 
-This gives us an early check that the project's dependencies can be installed together. The workflow checks dependencies only; application tests and Serverless configuration validation will be added alongside the backend code.
+This checks dependency installation and frontend behavior with mocked responses. AWS deployment and Streamlit hosting are configured separately.
 
 For deployment, the next step is a separate workflow that uses GitHub OIDC to assume an AWS deployment role, packages the backend, and runs `serverless deploy`. That workflow will need the AWS region, deployment role, knowledge base configuration, and Serverless authentication configured first.
 

@@ -1,4 +1,4 @@
-name: Dependency checks
+name: Frontend and dependency checks
 
 on:
   push:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   dependencies:
-    name: Check Python and Serverless dependencies
+    name: Check frontend, Python, and Serverless dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,6 +38,9 @@ jobs:
         run: |
           python -m pip check
           python -c "import streamlit, requests, boto3"
+
+      - name: Test frontend and API integration behavior
+        run: python -m unittest discover -s tests -v
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
