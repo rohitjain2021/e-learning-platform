@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+.serverless/
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml

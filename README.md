@@ -67,6 +67,44 @@ The employee can use those links to check the information or read more. They do 
 
 RAG helps ground answers in source material, but it does not guarantee correctness. A useful implementation should show the supporting sources and acknowledge when the documents do not contain enough information.
 
+## Python dependencies
+
+Use Python 3.12 and install the Python packages listed in [requirements.txt](requirements.txt) in a virtual environment:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+- **Streamlit:** Builds the interface where users ask questions and read answers.
+- **Requests:** Sends questions from the interface to the API Gateway endpoint.
+- **Boto3:** Connects the Python backend to S3 and Amazon Bedrock.
+
+Pip installs the supporting packages automatically. API Gateway, Lambda, S3, Bedrock, and OpenSearch are AWS services configured separately. Bedrock Knowledge Bases handles document chunking, embeddings, and retrieval, so this flow does not require a separate local vector database or PDF processing library.
+
+The root requirements file covers the frontend and local AWS development. For Lambda deployment, package only the backend dependencies; Streamlit belongs in the frontend environment.
+
+## Serverless Framework
+
+We use **Serverless Framework** to define and deploy the AWS Lambda backend and API Gateway configuration. It is a Node.js development tool, so it is listed in [package.json](package.json), separately from the Python packages in `requirements.txt`.
+
+Use Node.js 24, as specified in [.nvmrc](.nvmrc), then install the tooling:
+
+```powershell
+npm ci
+```
+
+The [package-lock.json](package-lock.json) records the Node.js dependency versions. The backend's functions, API routes, and AWS settings will be defined in `serverless.yml` when we add the backend. Serverless Framework v4 requires a Serverless account or license key for deployment.
+
+## GitHub Actions pipeline
+
+The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests targeting `main`, pushes to `main`, and manual runs. It installs the Python packages, checks for dependency conflicts, verifies the main imports, and installs and checks the Serverless Framework dependency.
+
+This gives us an early check that the project's dependencies can be installed together. The workflow checks dependencies only; application tests and Serverless configuration validation will be added alongside the backend code.
+
+For deployment, the next step is a separate workflow that uses GitHub OIDC to assume an AWS deployment role, packages the backend, and runs `serverless deploy`. That workflow will need the AWS region, deployment role, knowledge base configuration, and Serverless authentication configured first.
+
 ## What about keys and credentials?
 
 The knowledge base and embeddings help find information. **Credentials serve a different purpose: they control access to AWS services.** The diagram does not specify an API key or sign-in mechanism.

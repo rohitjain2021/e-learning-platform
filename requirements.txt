@@ -1,0 +1,11 @@
+# Streamlit frontend and local AWS development dependencies.
+# pip installs the dependencies required by these packages automatically.
+
+# Web interface for asking questions and displaying answers and source links.
+streamlit==1.66.1
+
+# HTTP calls from the frontend to Amazon API Gateway.
+requests==2.34.2
+
+# AWS SDK for S3, Bedrock Knowledge Bases, and Bedrock model invocation.
+boto3==1.43.123

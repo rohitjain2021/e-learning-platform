@@ -1,0 +1,49 @@
+name: Dependency checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    name: Check Python and Serverless dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Check Python dependencies
+        run: |
+          python -m pip check
+          python -c "import streamlit, requests, boto3"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Serverless Framework tooling
+        run: npm ci
+
+      - name: Check Serverless dependency
+        run: npm ls serverless --depth=0
