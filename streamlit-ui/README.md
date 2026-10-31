@@ -10,7 +10,7 @@ Use Python 3.12 from the repository root:
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m streamlit run streamlit_app.py
+python -m streamlit run streamlit-ui/streamlit_app.py
 ```
 
 Open the local address printed by Streamlit. The page opens without API configuration, but Ask stays disabled until an endpoint is configured. The frontend does not return invented demo answers.
@@ -33,7 +33,9 @@ API_BEARER_TOKEN = ""
 
 Replace the example URL with the full deployed question endpoint, including any stage prefix and route. This example is not an existing endpoint. The S3 bucket has been deployed; the question-answering API still needs to be connected before the frontend can return answers.
 
-Environment variables with the same names take precedence over the secrets file. Global application defaults and validation are in `app_config.py`. The timeout setting accepts 1 through 120 seconds. HTTP is allowed only on localhost for local backend development; hosted endpoints use HTTPS.
+Environment variables with the same names take precedence over the secrets file. Global application defaults and validation are in `streamlit-ui/app_config.py`. The timeout setting accepts 1 through 120 seconds. HTTP is allowed only on localhost for local backend development; hosted endpoints use HTTPS.
+
+The UI code, tests, and frontend requirements are grouped in `streamlit-ui`. Shared `.streamlit` configuration stays at the repository root. Run Streamlit from the repository root to use the same configuration and secrets paths locally and on Community Cloud. The root requirements file includes the frontend requirements plus the AWS SDK for combined local development.
 
 Leave the bearer token empty unless the API explicitly supports a server-to-server `Authorization: Bearer ...` token. This setting does not implement user sign-in, per-user permissions, AWS IAM request signing, or an API Gateway API key. Match authentication to the backend when that is implemented. Do not enter AWS access keys here or commit the real secrets file; it is already ignored by Git.
 
@@ -72,8 +74,8 @@ After committing and pushing the frontend:
 
 1. In Streamlit Community Cloud, create an app from your GitHub repository.
 2. Select repository `rohitjain2021/e-learning-platform` and branch `main`.
-3. Set the main file path to `streamlit_app.py` and Python to 3.12 in the deployment settings.
-4. Paste the connection settings into the app's Secrets settings. The requirements file at the repository root supplies the packages.
+3. Set the main file path to `streamlit-ui/streamlit_app.py` and Python to 3.12 in the deployment settings.
+4. Paste the connection settings into the app's Secrets settings. The requirements file alongside the entry point supplies the frontend packages.
 5. Deploy the app. Once the backend exists, set `API_URL` and test a question and its source link.
 
 Streamlit hosts the frontend; Serverless Framework deploys the AWS backend resources. The GitHub Actions workflow installs dependencies and runs API-client and Streamlit page tests using mocked HTTP. It neither provisions Streamlit hosting nor deploys AWS resources. Community Cloud manages its own updates from the connected branch; protect that branch with required checks if successful CI must be a prerequisite for release.
@@ -83,7 +85,9 @@ Official references: [secrets management](https://docs.streamlit.io/develop/conc
 ## Run checks
 
 ```powershell
+Push-Location streamlit-ui
 python -m unittest discover -s tests -v
+Pop-Location
 ```
 
 The tests do not call AWS, the knowledge base, or a language model. They cover the disconnected page, question validation, answer/source rendering, HTTP errors, malformed responses, link handling, configuration, and clearing stale answers after a timeout.

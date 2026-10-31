@@ -1,4 +1,4 @@
-"""Run with: python -m streamlit run streamlit_app.py."""
+"""From the repository root: python -m streamlit run streamlit-ui/streamlit_app.py."""
 
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError

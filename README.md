@@ -75,7 +75,21 @@ The demo uses five short documents from a fictional learning program. They cover
 
 ## Ask questions in the app
 
-The Streamlit interface lets users enter a question, read the answer, and open the supporting sources. It shows a loading indicator while waiting and clear messages when a request fails. Follow the [frontend setup instructions](docs/frontend-setup.md) to run it locally, configure the backend connection, or host it on Streamlit Community Cloud.
+The Streamlit interface lets users enter a question, read the answer, and open the supporting sources. It shows a loading indicator while waiting and clear messages when a request fails. Follow the [frontend setup instructions](streamlit-ui/README.md) to run it locally, configure the backend connection, or host it on Streamlit Community Cloud.
+
+## Project organization
+
+| Area | Responsibility |
+| --- | --- |
+| `streamlit-ui/` | Frontend, API client, UI tests, and frontend dependencies. |
+| `backend/` | Backend dependencies and future Python API and retrieval code. |
+| `infrastructure/` | AWS resources, global infrastructure settings, and deployment tooling. |
+| `docs/` | Shared architecture and demo documentation. |
+| `data/demo/` | Fictional source documents used for demonstrations. |
+| `.github/workflows/` | CI/CD automation. |
+| `.streamlit/` | Shared Streamlit hosting configuration and secret templates. |
+
+Keep each component's code, tests, dependencies, and setup instructions together. The root Python requirements combine component dependencies for local development.
 
 ## Python dependencies
 
@@ -97,15 +111,17 @@ The root requirements file covers the frontend and local AWS development. For La
 
 ## Serverless Framework
 
-We use **Serverless Framework** to define and deploy the AWS Lambda backend and API Gateway configuration. It is a Node.js development tool, so it is listed in [package.json](package.json), separately from the Python packages in `requirements.txt`.
+We use **Serverless Framework** to define and deploy the AWS Lambda backend and API Gateway configuration. The Node.js deployment tooling is kept with the infrastructure, separately from the Python application dependencies.
 
-Use Node.js 24, as specified in [.nvmrc](.nvmrc), then install the tooling:
+Use Node.js 24, then install the deployment tooling from the infrastructure directory:
 
 ```powershell
+Push-Location infrastructure
 npm ci
+Pop-Location
 ```
 
-The [package-lock.json](package-lock.json) records the Node.js dependency versions. [serverless.yml](serverless.yml) defines the AWS deployment and loads the S3 resources from [infrastructure/knowledge-base-storage.yml](infrastructure/knowledge-base-storage.yml). Serverless Framework v4 requires a Serverless account or license key for deployment.
+The infrastructure component owns the Serverless configuration, dependency lockfile, and S3 resource definitions. See the [infrastructure guide](infrastructure/README.md) for deployment details. Serverless Framework v4 requires a Serverless account or license key for deployment.
 
 ## Knowledge base document storage
 
@@ -120,10 +136,12 @@ The data source bucket is **`e-learning-platform-knowledge-base`**. Its infrastr
 With Node.js 24, the npm dependencies, and AWS and Serverless credentials configured, deploy with:
 
 ```powershell
+Push-Location infrastructure
 npx serverless deploy --stage dev --region us-east-1
+Pop-Location
 ```
 
-Project settings are defined once in the `custom` section at the top of `serverless.yml`. Provider settings and infrastructure resources reference those global values. To change the bucket name, update `custom.knowledgeBaseBucketName` there.
+Project settings are defined once in the `custom` section at the top of the infrastructure's Serverless configuration. Provider settings and infrastructure resources reference those global values. To change the bucket name, update `custom.knowledgeBaseBucketName` there.
 
 Choose the region where the knowledge base will run. The bucket name is globally unique, so use it from one stack only. If another account already owns the name, update the global bucket name before deploying. A bucket created outside this stack must be imported rather than recreated.
 

@@ -1,0 +1,2 @@
+# AWS SDK for S3, Bedrock Knowledge Bases, and Bedrock model invocation.
+boto3==1.43.123
