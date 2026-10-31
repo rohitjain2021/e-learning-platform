@@ -15,6 +15,9 @@ permissions:
 
 # Shared workflow settings are defined here once for both checking and deployment.
 env:
+  # Fix the OS version so a moving ubuntu-latest label cannot change our build environment.
+  # The YAML anchor lets both jobs reuse this value defined at the top of this workflow.
+  RUNNER_IMAGE: &runner_image ubuntu-26.04
   # Match the Python version used for application and deployment tooling.
   PYTHON_VERSION: '3.12'
   # Component locations keep dependencies, tests, and build steps organized.
@@ -31,7 +34,7 @@ jobs:
   # Check dependencies, template syntax, full CloudFormation lint, and tests without AWS access.
   dependencies:
     name: Check frontend, Python, and Serverless dependencies
-    runs-on: ubuntu-latest
+    runs-on: *runner_image
     timeout-minutes: 15
     steps:
       # Download the exact commit being checked; do not leave Git write credentials on the runner.
@@ -100,7 +103,7 @@ jobs:
     name: Deploy infrastructure through CloudFormation
     needs: dependencies
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: *runner_image
     timeout-minutes: 45
     # Run one deployment at a time so two workflow runs cannot modify the stack together.
     concurrency:
@@ -156,7 +159,7 @@ jobs:
       # Keep readable deployment evidence for troubleshooting; do not upload credentials or state files.
       - name: Upload readable deployment templates and summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0; native Node.js 24 runtime
         with:
           name: infrastructure-${{ github.sha }}
           path: |
