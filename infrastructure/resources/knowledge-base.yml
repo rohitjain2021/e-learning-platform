@@ -1,16 +1,28 @@
+# Template fragment: external references are checked on the assembled template.
+# The build removes this editor-only configuration before full cfn-lint validation.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E1010, E1019, E1020, E3024]
+
+# Detect the first deployment, before the knowledge base has an ID of its own.
 Conditions:
   IsKnowledgeBaseBootstrap:
     Fn::Equals:
     - Ref: KnowledgeBaseTrustResourceId
     - '*'
+# Create the access role, searchable knowledge base, and document-source connection.
 Resources:
+  # Give Bedrock only the permissions needed to read these documents and create embeddings.
   KnowledgeBaseServiceRole:
     Type: AWS::IAM::Role
     Properties:
+      # Build a recognizable name from the shared project and environment settings.
       RoleName:
         Fn::Sub: ${ProjectName}-${DeploymentStage}-bedrock-kb-service
       Description: Read the project learning documents and invoke only the chosen
         embedding model
+      # Only Bedrock in this account can use this role for the permitted knowledge base.
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -25,17 +37,21 @@ Resources:
             ArnLike:
               aws:SourceArn:
                 Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${KnowledgeBaseTrustResourceId}
+            # During first creation, allow access only until the short deadline.
+            # After creation, the pipeline removes this deadline and trusts only the exact knowledge base.
             DateLessThan:
               Fn::If:
               - IsKnowledgeBaseBootstrap
               - aws:CurrentTime:
                   Ref: KnowledgeBaseBootstrapTrustExpiresAt
               - Ref: AWS::NoValue
+      # List individual allowed actions rather than granting broad administrator permissions.
       Policies:
       - PolicyName: KnowledgeBaseDocumentAndEmbeddingAccess
         PolicyDocument:
           Version: '2012-10-17'
           Statement:
+          # Allow listing only the configured document folder, not browsing unrelated bucket contents.
           - Sid: ListLearningDocuments
             Effect: Allow
             Action: s3:ListBucket
@@ -50,6 +66,7 @@ Resources:
               StringLike:
                 s3:prefix:
                 - Fn::Sub: ${KnowledgeBaseSourcePrefix}*
+          # Allow reading source documents; this grants no permission to upload or delete them.
           - Sid: ReadLearningDocuments
             Effect: Allow
             Action: s3:GetObject
@@ -59,11 +76,14 @@ Resources:
               StringEquals:
                 aws:ResourceAccount:
                   Ref: AWS::AccountId
+          # Allow calling only the chosen embedding model, not every Bedrock model.
           - Sid: InvokeSelectedEmbeddingModel
             Effect: Allow
             Action: bedrock:InvokeModel
             Resource:
               Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}
+          # Allow service health metrics only in the knowledge-base namespace.
+          # This AWS operation has no resource ARN, so its namespace supplies the restriction.
           - Sid: PublishKnowledgeBaseMetrics
             Effect: Allow
             Action: cloudwatch:PutMetricData
@@ -75,6 +95,7 @@ Resources:
       - Key: Project
         Value:
           Ref: ProjectName
+  # Create the searchable document collection. Bedrock manages vector storage and indexing.
   LearningKnowledgeBase:
     Type: AWS::Bedrock::KnowledgeBase
     Properties:
@@ -86,12 +107,15 @@ Resources:
         Fn::GetAtt:
         - KnowledgeBaseServiceRole
         - Arn
+      # Use managed storage with the selected Amazon embedding model.
+      # CUSTOM means we choose a Bedrock model; it does not mean we train a new model.
       KnowledgeBaseConfiguration:
         Type: MANAGED
         ManagedKnowledgeBaseConfiguration:
           EmbeddingModelType: CUSTOM
           EmbeddingModelArn:
             Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/${EmbeddingModelId}
+          # Use the global embedding size and the floating-point format required by this index.
           EmbeddingModelConfiguration:
             BedrockEmbeddingModelConfiguration:
               Dimensions:
@@ -100,6 +124,7 @@ Resources:
       Tags:
         Project:
           Ref: ProjectName
+  # Connect the knowledge base to the encrypted S3 document folder.
   LearningKnowledgeBaseDataSource:
     Type: AWS::Bedrock::DataSource
     Properties:
@@ -108,7 +133,9 @@ Resources:
       Description: Learning documents from the existing encrypted S3 bucket
       KnowledgeBaseId:
         Ref: LearningKnowledgeBase
+      # Removing the connection deletes its indexed content; the original S3 documents remain.
       DataDeletionPolicy: DELETE
+      # Use the managed S3 connector. No sync schedule is set, so synchronization stays on demand.
       DataSourceConfiguration:
         Type: MANAGED_KNOWLEDGE_BASE_CONNECTOR
         ManagedKnowledgeBaseConnectorConfiguration:
@@ -120,28 +147,35 @@ Resources:
                 Ref: KnowledgeBaseBucket
               bucketOwnerAccountId:
                 Ref: AWS::AccountId
+            # Restrict ingestion to the globally configured folder inside the source bucket.
             filterConfiguration:
               inclusionPrefixes:
               - Ref: KnowledgeBaseSourcePrefix
       # Default chunking; on-demand sync (no SyncSchedule configured).
+      # Let Bedrock parse document content before indexing it. Omitted chunking settings use defaults.
       VectorIngestionConfiguration:
         ParsingConfiguration:
           ParsingStrategy: SMART_PARSING
+# Return the IDs needed to verify deployment and connect a future backend to this knowledge base.
 Outputs:
+  # The short ID a backend uses to select this knowledge base.
   LearningKnowledgeBaseId:
     Description: Managed learning knowledge base ID
     Value:
       Ref: LearningKnowledgeBase
+  # The complete AWS identifier used to restrict the service role to this knowledge base.
   LearningKnowledgeBaseArn:
     Value:
       Fn::GetAtt:
       - LearningKnowledgeBase
       - KnowledgeBaseArn
+  # The connection ID used when requesting an on-demand document synchronization.
   LearningKnowledgeBaseDataSourceId:
     Value:
       Fn::GetAtt:
       - LearningKnowledgeBaseDataSource
       - DataSourceId
+  # The role identifier used to verify that document and model permissions stay restricted.
   LearningKnowledgeBaseServiceRoleArn:
     Value:
       Fn::GetAtt:

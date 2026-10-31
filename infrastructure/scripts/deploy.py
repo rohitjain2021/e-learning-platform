@@ -11,19 +11,30 @@ from botocore.exceptions import WaiterError
 import yaml
 
 
-# Global configuration; infrastructure defaults are defined in parameters.yml.
+# Global paths: keep generated files separate from the YAML people edit.
 INFRASTRUCTURE_DIRECTORY = Path(__file__).resolve().parents[1]
 ARTIFACT_DIRECTORY = INFRASTRUCTURE_DIRECTORY / ".serverless"
 CONFIGURATION_FILE = INFRASTRUCTURE_DIRECTORY / "parameters.yml"
 RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml")
+# Fixed trust boundaries: a caller must not be able to choose a different trusted repository.
 EXPECTED_REPOSITORY = "rohitjain2021/e-learning-platform"
 EXPECTED_REF = "refs/heads/main"
+# Global deployment controls: bound temporary access and how long AWS operations may run.
 BOOTSTRAP_MINUTES = 30
+CHANGE_SET_POLL_SECONDS = 3
+CHANGE_SET_POLL_ATTEMPTS = 120
+STACK_POLL_SECONDS = 5
+STACK_POLL_ATTEMPTS = 480
+FAILURE_EVENT_LIMIT = 20
+# Reuse the global YAML defaults; GitHub Actions may supply region and stage at runtime.
+PARAMETER_DEFAULTS = yaml.safe_load(CONFIGURATION_FILE.read_text(encoding="utf-8"))["Parameters"]
+EXPIRED_TRUST_TIMESTAMP = PARAMETER_DEFAULTS["KnowledgeBaseBootstrapTrustExpiresAt"]["Default"]
 REGION = os.environ.get("AWS_REGION", "us-east-1")
-STAGE = os.environ.get("DEPLOYMENT_STAGE", "dev")
+STAGE = os.environ.get("DEPLOYMENT_STAGE", PARAMETER_DEFAULTS["DeploymentStage"]["Default"])
 
 
 def require_pipeline():
+    """Reject local or untrusted runs before any AWS resource can be changed."""
     if (os.environ.get("GITHUB_ACTIONS") != "true"
             or os.environ.get("GITHUB_REPOSITORY") != EXPECTED_REPOSITORY
             or os.environ.get("GITHUB_REF") != EXPECTED_REF):
@@ -56,6 +67,11 @@ def build_template():
                 "Description": "E-learning knowledge base, document storage, and application logging"}
     for path in [CONFIGURATION_FILE] + [INFRASTRUCTURE_DIRECTORY / "resources" / p for p in RESOURCE_FILES]:
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        # Fragment editor exceptions must never suppress checks on the full template.
+        metadata = document.get("Metadata", {})
+        metadata.pop("cfn-lint", None)
+        if "Metadata" in document and not metadata:
+            del document["Metadata"]
         for section, entries in document.items():
             destination = template.setdefault(section, {})
             duplicates = destination.keys() & entries.keys()
@@ -77,6 +93,7 @@ def validate_changes(changes):
 def package_and_deploy(client, stack_name, trust_id, exists=True):
     """Validate YAML and execute a checked change set, only from the trusted pipeline."""
     require_pipeline()
+    # Assemble a readable template and ask AWS to validate it before requesting changes.
     template = build_template()
     ARTIFACT_DIRECTORY.mkdir(parents=True, exist_ok=True)
     readable = ARTIFACT_DIRECTORY / "cloudformation-template-update-stack.yml"
@@ -87,7 +104,7 @@ def package_and_deploy(client, stack_name, trust_id, exists=True):
         datetime.now(timezone.utc) + timedelta(minutes=BOOTSTRAP_MINUTES)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     overrides = {"DeploymentStage": STAGE, "KnowledgeBaseTrustResourceId": trust_id,
-                 "KnowledgeBaseBootstrapTrustExpiresAt": expires_at if trust_id == "*" else "1970-01-01T00:00:00Z"}
+                 "KnowledgeBaseBootstrapTrustExpiresAt": expires_at if trust_id == "*" else EXPIRED_TRUST_TIMESTAMP}
     parameters = [{"ParameterKey": key, "ParameterValue": value}
                   for key, value in overrides.items()]
     # Preserve deployed overrides on subsequent updates; new parameters use YAML defaults.
@@ -96,6 +113,7 @@ def package_and_deploy(client, stack_name, trust_id, exists=True):
         parameters += [{"ParameterKey": p["ParameterKey"], "UsePreviousValue": True}
                        for p in previous.get("Parameters", [])
                        if p["ParameterKey"] in template["Parameters"] and p["ParameterKey"] not in overrides]
+    # A change set previews AWS's planned actions before the pipeline executes them.
     change_set = client.create_change_set(
         StackName=stack_name, ChangeSetName=f"github-{uuid4().hex}",
         ChangeSetType="UPDATE" if exists else "CREATE", TemplateBody=body,
@@ -104,29 +122,35 @@ def package_and_deploy(client, stack_name, trust_id, exists=True):
     )["Id"]
     try:
         client.get_waiter("change_set_create_complete").wait(
-            ChangeSetName=change_set, WaiterConfig={"Delay": 3, "MaxAttempts": 120})
+            ChangeSetName=change_set, WaiterConfig={"Delay": CHANGE_SET_POLL_SECONDS, "MaxAttempts": CHANGE_SET_POLL_ATTEMPTS})
     except WaiterError:
         result = client.describe_change_set(ChangeSetName=change_set)
         reason = result.get("StatusReason", "")
+        # Re-running unchanged infrastructure is a successful no-op, not a failed deployment.
         if result["Status"] == "FAILED" and ("didn't contain changes" in reason or "No updates are to be performed" in reason):
             client.delete_change_set(ChangeSetName=change_set)
             print("CloudFormation: no infrastructure changes.")
             return
         raise RuntimeError(f"CloudFormation change set failed: {reason}")
+    # Inspect every page so a risky removal cannot be missed in a large change set.
     pages = client.get_paginator("describe_change_set").paginate(ChangeSetName=change_set)
     changes = [change for page in pages for change in page.get("Changes", [])]
     validate_changes(changes)
+    # Apply only the checked change set, then wait for CloudFormation to finish.
     client.execute_change_set(ChangeSetName=change_set)
     waiter = "stack_update_complete" if exists else "stack_create_complete"
     try:
-        client.get_waiter(waiter).wait(StackName=stack_name, WaiterConfig={"Delay": 5, "MaxAttempts": 480})
+        client.get_waiter(waiter).wait(StackName=stack_name, WaiterConfig={"Delay": STACK_POLL_SECONDS, "MaxAttempts": STACK_POLL_ATTEMPTS})
     except WaiterError:
-        for event in client.describe_stack_events(StackName=stack_name)["StackEvents"][:20]:
+        # Include recent AWS failure reasons so operators know which resource needs attention.
+        for event in client.describe_stack_events(StackName=stack_name)["StackEvents"][:FAILURE_EVENT_LIMIT]:
             print(event["LogicalResourceId"], event["ResourceStatus"], event.get("ResourceStatusReason", ""))
         raise
 
 
 def verify(outputs):
+    """Confirm AWS created a ready knowledge base with narrowly scoped access and manual sync."""
+    # Check the actual service-role trust, not just what the source template requested.
     knowledge_base_id = outputs["LearningKnowledgeBaseId"]
     role_arn = outputs["LearningKnowledgeBaseServiceRoleArn"]
     role = boto3.client("iam").get_role(RoleName=role_arn.split("/")[-1])["Role"]
@@ -142,6 +166,7 @@ def verify(outputs):
             raise RuntimeError("Knowledge base role trust is not restricted to the exact resource.")
     if len(statements) != 1:
         raise RuntimeError("Unexpected knowledge base role trust statements.")
+    # A completed stack must also have a ready knowledge base and document connection.
     agent = boto3.client("bedrock-agent", region_name=REGION)
     kb = agent.get_knowledge_base(knowledgeBaseId=knowledge_base_id)["knowledgeBase"]
     source = agent.get_data_source(
@@ -153,6 +178,7 @@ def verify(outputs):
     connector = source["dataSourceConfiguration"]["managedKnowledgeBaseConnectorConfiguration"]
     if connector.get("syncSchedule"):
         raise RuntimeError("Data source must use on-demand synchronization.")
+    # Save readable deployment evidence for the workflow artifact, without credentials.
     summary = dict(outputs, KnowledgeBaseStatus=kb["status"], DataSourceStatus=source["status"])
     (ARTIFACT_DIRECTORY / "deployment-summary.yml").write_text(
         yaml.safe_dump(summary, sort_keys=False), encoding="utf-8")
@@ -160,10 +186,12 @@ def verify(outputs):
 
 
 def main():
+    """Deploy from GitHub Actions, tighten first-creation trust, and verify the final result."""
     require_pipeline()
     project_name = build_template()["Parameters"]["ProjectName"]["Default"]
     stack_name = f"{project_name}-{STAGE}"
     cloudformation = boto3.client("cloudformation", region_name=REGION)
+    # Reuse the deployed ID when updating, so later runs never broaden the role's trust.
     previous_stack = describe_stack(cloudformation, stack_name)
     previous = {item["OutputKey"]: item["OutputValue"] for item in (previous_stack or {}).get("Outputs", [])}
     trust_id = previous.get("LearningKnowledgeBaseId", "*")

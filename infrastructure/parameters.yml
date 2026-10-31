@@ -1,37 +1,52 @@
 # Global infrastructure configuration shared by CloudFormation and Serverless.
+# Change shared infrastructure settings here instead of editing individual resources.
+# CloudFormation passes these values into the resource files when they are combined.
 Parameters:
+  # A shared project label keeps resource names and cost-tracking tags recognizable.
   ProjectName:
     Type: String
     Default: e-learning-platform
     AllowedPattern: '[a-z0-9-]+'
+  # The environment label separates development resources from future test or production resources.
   DeploymentStage:
     Type: String
     Default: dev
     AllowedPattern: '[a-z0-9-]+'
+  # The existing document bucket. Keeping its name stable preserves the uploaded documents.
   KnowledgeBaseBucketName:
     Type: String
     Default: e-learning-platform-knowledge-base
+  # A readable tag explains why this bucket exists when reviewing AWS resources or costs.
   KnowledgeBaseStoragePurpose:
     Type: String
     Default: rag-knowledge-base-documents
+  # A short explanation shown beside the knowledge base in the AWS console.
   KnowledgeBaseDescription:
     Type: String
     Default: Learning documents with managed indexing and on-demand Nova embeddings
+  # Read only this folder inside the bucket, so unrelated documents are not indexed.
   KnowledgeBaseSourcePrefix:
     Type: String
     Default: demo/learning/
+  # The Amazon model converts content into numbers representing its meaning for search.
   EmbeddingModelId:
     Type: String
     Default: amazon.nova-2-multimodal-embeddings-v1:0
+  # The number of values in each embedding; it must match the selected model and index.
   EmbeddingDimensions:
     Type: Number
     Default: 1024
+  # Keep processing logs for this many days to support troubleshooting and control storage costs.
   KnowledgeBaseLogRetentionDays:
     Type: Number
     Default: 30
+  # The pipeline replaces this first-creation placeholder with the exact new knowledge base ID.
+  # This limits the service role to one knowledge base after creation.
   KnowledgeBaseTrustResourceId:
     Type: String
     Default: '*'
+  # Temporary first-creation access expires automatically. The old default date grants no access.
+  # The pipeline supplies a short future deadline only while creating the knowledge base.
   KnowledgeBaseBootstrapTrustExpiresAt:
     Type: String
     Default: '1970-01-01T00:00:00Z'

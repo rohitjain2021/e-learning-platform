@@ -25,3 +25,10 @@
 - Keep dependency versions in their package manifests and lockfiles. Fixed AWS schema values and policy constants do not need to become configurable variables.
 - Read secrets from environment variables or a secret store; never hardcode credentials in global configuration or commit them.
 - When moving files, update imports, configuration references, CI working directories, and documentation. Preserve deployed AWS resource identities unless a resource change is explicitly requested.
+
+## Readable code and comments
+
+- Add a plain-language comment above each infrastructure resource, policy purpose, configuration group, and workflow section. Explain what it does, why it is needed, and its practical benefit.
+- Give application and deployment functions a short docstring explaining their purpose. Explain non-obvious safety checks and processing stages without repeating every line of code.
+- Keep configurable defaults at the top/global component level. Values calculated for a request or deployment stay local to the function using them. Fixed AWS schema values and policy actions are not configurable project settings.
+- Comments must describe actual behavior and stay accurate when the code changes. Never include credentials in examples or comments.

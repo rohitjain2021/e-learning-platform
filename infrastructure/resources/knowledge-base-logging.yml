@@ -1,17 +1,30 @@
+# Template fragment: external references are checked on the assembled template.
+# The build removes this editor-only configuration before full cfn-lint validation.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E1010, E1019, E1020, E3024]
+
+# Send document-processing logs to a clearly named CloudWatch destination for troubleshooting.
 Resources:
+  # Store the knowledge-base application logs together so they are easy to find.
   KnowledgeBaseApplicationLogGroup:
     Type: AWS::Logs::LogGroup
+    # Preserve existing troubleshooting logs if the stack or log-group definition is removed.
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
+      # Include the project and environment in the log-group name to distinguish this application.
       LogGroupName:
         Fn::Sub: /aws/vendedlogs/bedrock/${ProjectName}/${DeploymentStage}/knowledge-base
+      # Automatically expire older logs using the shared retention setting.
       RetentionInDays:
         Ref: KnowledgeBaseLogRetentionDays
       Tags:
       - Key: Project
         Value:
           Ref: ProjectName
+  # Permit the AWS log-delivery service to write only to this destination in this account.
   KnowledgeBaseApplicationLogPolicy:
     Type: AWS::Logs::ResourcePolicy
     Properties:
@@ -38,6 +51,7 @@ Resources:
             ArnLike:
               aws:SourceArn:
                 Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+  # Identify this knowledge base as the producer of application and ingestion logs.
   KnowledgeBaseApplicationLogSource:
     Type: AWS::Logs::DeliverySource
     Properties:
@@ -48,6 +62,7 @@ Resources:
         Fn::GetAtt:
         - LearningKnowledgeBase
         - KnowledgeBaseArn
+  # Identify the CloudWatch log group where those logs should be delivered.
   KnowledgeBaseApplicationLogDestination:
     Type: AWS::Logs::DeliveryDestination
     Properties:
@@ -57,7 +72,9 @@ Resources:
         Fn::GetAtt:
         - KnowledgeBaseApplicationLogGroup
         - Arn
+      # Use structured JSON log records so fields can be searched and filtered.
       OutputFormat: json
+  # Connect the log producer to the destination, completing the delivery path.
   KnowledgeBaseApplicationLogDelivery:
     Type: AWS::Logs::Delivery
     Properties:
@@ -67,9 +84,11 @@ Resources:
         Fn::GetAtt:
         - KnowledgeBaseApplicationLogDestination
         - Arn
+    # Create the write permission and log source first, so delivery is not configured too early.
     DependsOn:
     - KnowledgeBaseApplicationLogPolicy
     - KnowledgeBaseApplicationLogSource
+# Expose the log-group name so operators know where to investigate document-processing issues.
 Outputs:
   KnowledgeBaseApplicationLogGroupName:
     Value:

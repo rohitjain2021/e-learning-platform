@@ -1,25 +1,41 @@
+# Template fragment: external references are checked on the assembled template.
+# The build removes this editor-only configuration before full cfn-lint validation.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E1020, E3024]
+
+# These resources store the original documents and protect access to them.
 Resources:
+  # Create the private document store used by the learning assistant.
   KnowledgeBaseBucket:
     Type: AWS::S3::Bucket
+    # Retain documents if the stack is removed or the bucket definition is replaced.
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
+      # Use the globally configured bucket name so every component points to the same source.
       BucketName:
         Ref: KnowledgeBaseBucketName
+      # Encrypt every new object at rest with S3-managed keys; applications need no encryption code.
       BucketEncryption:
         ServerSideEncryptionConfiguration:
         - ServerSideEncryptionByDefault:
             SSEAlgorithm: AES256
+      # Block public access so documents cannot accidentally become publicly readable.
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
+      # Keep object ownership with this AWS account and disable separate object access lists.
       OwnershipControls:
         Rules:
         - ObjectOwnership: BucketOwnerEnforced
+      # Keep previous document versions so accidental overwrites can be recovered.
       VersioningConfiguration:
         Status: Enabled
+      # Attach the project name and purpose for ownership and cost tracking.
       Tags:
       - Key: Project
         Value:
@@ -27,6 +43,7 @@ Resources:
       - Key: Purpose
         Value:
           Ref: KnowledgeBaseStoragePurpose
+  # Require encrypted HTTPS connections for document access.
   KnowledgeBaseBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -49,15 +66,19 @@ Resources:
                 - KnowledgeBaseBucket
                 - Arn
               - /*
+          # Reject unencrypted requests from non-service callers; AWS service calls have an explicit exception.
           Condition:
             Bool:
               aws:SecureTransport: 'false'
               aws:PrincipalIsAWSService: 'false'
+# Publish the bucket name and AWS identifier so the pipeline and other components can find it.
 Outputs:
+  # The readable bucket name used to upload or locate documents.
   KnowledgeBaseBucketName:
     Description: S3 bucket containing source documents for the RAG knowledge base
     Value:
       Ref: KnowledgeBaseBucket
+  # The full AWS resource identifier used in access policies.
   KnowledgeBaseBucketArn:
     Description: ARN of the knowledge base source bucket
     Value:

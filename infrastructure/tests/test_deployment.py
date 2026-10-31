@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from botocore.exceptions import ClientError, WaiterError
 
 
+# Load the deployment module without running its main function or contacting AWS.
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "deploy.py"
 SPEC = importlib.util.spec_from_file_location("project_deploy", SCRIPT_PATH)
 DEPLOY = importlib.util.module_from_spec(SPEC)
@@ -17,6 +18,7 @@ SPEC.loader.exec_module(DEPLOY)
 
 
 class DeploymentSafetyTests(unittest.TestCase):
+    """Use simulated AWS clients to check deployment boundaries and template validation safely."""
     def test_local_execution_is_rejected(self):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "GitHub Actions"):
@@ -46,6 +48,24 @@ class DeploymentSafetyTests(unittest.TestCase):
         self.assertEqual(template["Resources"]["LearningKnowledgeBase"]["Properties"]["KnowledgeBaseConfiguration"]["Type"], "MANAGED")
         self.assertEqual(template["Parameters"]["EmbeddingDimensions"]["Default"], 1024)
         self.assertEqual(template["Parameters"]["EmbeddingModelId"]["Default"], "amazon.nova-2-multimodal-embeddings-v1:0")
+
+    def test_full_template_lint_still_catches_broken_cross_file_references(self):
+        from cfnlint.api import lint
+        import yaml
+        template = DEPLOY.build_template()
+        self.assertNotIn("cfn-lint", template.get("Metadata", {}))
+        template["Resources"]["KnowledgeBaseBucket"]["Properties"]["BucketName"] = {"Ref": "MissingBucketParameter"}
+        matches = lint(yaml.safe_dump(template), config={"regions": [DEPLOY.REGION]})
+        self.assertIn("E1020", {match.rule.id for match in matches})
+
+    def test_fragment_editor_exceptions_do_not_hide_invalid_resource_properties(self):
+        from cfnlint.api import lint
+        import yaml
+        path = DEPLOY.INFRASTRUCTURE_DIRECTORY / "resources" / "knowledge-base-storage.yml"
+        fragment = yaml.safe_load(path.read_text(encoding="utf-8"))
+        fragment["Resources"]["KnowledgeBaseBucket"]["Properties"]["InvalidBucketSetting"] = True
+        matches = lint(yaml.safe_dump(fragment), config={"regions": [DEPLOY.REGION]})
+        self.assertIn("E3002", {match.rule.id for match in matches})
 
     def test_removals_and_possible_replacements_are_blocked(self):
         for details in ({"Action": "Remove"}, {"Action": "Modify", "Replacement": "True"},

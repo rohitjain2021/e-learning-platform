@@ -24,6 +24,7 @@ class AssistantError(Exception):
 
 @dataclass(frozen=True)
 class Source:
+    """Keep a source title, safe browser link, and document identifier together for display."""
     title: str
     url: str
     uri: str
@@ -31,11 +32,14 @@ class Source:
 
 @dataclass(frozen=True)
 class Answer:
+    """Return the answer and its supporting documents as one consistent result."""
     text: str
     sources: tuple[Source, ...]
 
 
 def ask_question(question: str, settings: Settings) -> Answer:
+    """Validate a question, call the backend, and return safe answer data or a readable error."""
+    # Reject missing, oversized, or disconnected requests before calling the backend.
     question = question.strip()
     if not question:
         raise AssistantError("Please enter a question.")
@@ -44,9 +48,11 @@ def ask_question(question: str, settings: Settings) -> Answer:
     if not settings.api_url:
         raise AssistantError("The assistant is not connected yet. Please try again later.")
 
+    # Send an optional access token in the request header; never show it in the interface.
     headers = {"Accept": "application/json"}
     if settings.bearer_token:
         headers["Authorization"] = f"Bearer {settings.bearer_token}"
+    # Bound connection and response waiting time, and avoid forwarding credentials through redirects.
     try:
         response = requests.post(
             settings.api_url,
@@ -60,9 +66,11 @@ def ask_question(question: str, settings: Settings) -> Answer:
     except requests.RequestException as error:
         raise AssistantError(CONNECTION_ERROR) from error
 
+    # Translate backend failures into safe messages instead of exposing raw responses.
     if response.status_code != 200:
         raise AssistantError(STATUS_ERRORS.get(response.status_code, CONNECTION_ERROR))
 
+    # Check the response structure before displaying any answer or references.
     try:
         payload = response.json()
     except ValueError as error:
@@ -74,6 +82,7 @@ def ask_question(question: str, settings: Settings) -> Answer:
     if not isinstance(text, str) or not text.strip() or not isinstance(sources, list):
         raise AssistantError(RESPONSE_ERROR)
 
+    # Accept source records only in the expected format and make only valid HTTPS URLs clickable.
     parsed_sources = []
     for index, source in enumerate(sources, start=1):
         if not isinstance(source, dict):

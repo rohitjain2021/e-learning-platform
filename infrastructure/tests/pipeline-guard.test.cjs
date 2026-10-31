@@ -3,9 +3,11 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const PipelineOnly = require("../plugins/pipeline-only.cjs");
+// Save the process settings so each simulated workflow starts and finishes independently.
 const ORIGINAL_ENV = { ...process.env };
 const GUARDED_ENV_KEYS = ["GITHUB_ACTIONS", "GITHUB_REPOSITORY", "GITHUB_REF"];
 
+// Simulate a local or GitHub run and always restore the caller's environment afterward.
 function check(command, environment) {
   for (const name of GUARDED_ENV_KEYS) delete process.env[name];
   Object.assign(process.env, environment);

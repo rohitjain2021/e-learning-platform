@@ -60,3 +60,10 @@ Use an approved operational workflow or authorized console sync action. Monitor 
 ## Local checks
 
 With Python 3.12 and Node.js 24, install the root requirements and infrastructure/requirements-dev.txt. Run infrastructure/scripts/validate.py, Python unittest discovery under infrastructure/tests, and node --test infrastructure/tests/pipeline-guard.test.cjs. These checks do not deploy resources.
+
+Resource files are template fragments. Their `Metadata.cfn-lint` settings suppress only standalone reference checks that require other fragments; syntax and resource-property checks remain enabled in the editor. The build removes this editor-only metadata, and `scripts/validate.py` runs pinned `cfn-lint` against the complete assembled template and the standalone bootstrap template, locally and in CI. Full-template lint still rejects missing parameters and resources. The generated readable template is saved under the ignored `.serverless/` directory for inspection.
+## Reading and changing the configuration
+
+Start with `parameters.yml`: it holds the shared infrastructure defaults. The resource files explain the document store, searchable knowledge base, access permissions, and logs section by section. `Ref` reads a shared value or another resource's ID; `Fn::Sub` builds a name from those values. AWS provides account and region identifiers automatically.
+
+The separate bootstrap stack declares its own inputs at the top because it must work before the application stack exists. Workflow settings are grouped in the workflow-level `env`; Python application settings live in `streamlit-ui/app_config.py`, and deployment paths and waiting limits are grouped at the top of `scripts/deploy.py`. Request-specific results and temporary loop values stay inside their functions. Credentials come from secrets or temporary AWS sessions, never from the global configuration files.

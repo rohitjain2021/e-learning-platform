@@ -22,11 +22,13 @@ NAVIGATION_OPTIONS = ("Ask", "Documents")
 
 
 def choose_question(question):
+    """Copy a suggested question into the input box without submitting it automatically."""
     st.session_state[INPUT_KEY] = question
 
 
 @st.dialog("Learning document", width="large")
 def show_document(index):
+    """Open a local sample document so a learner can read the original material."""
     filename, title, _ = DOCUMENT_CATALOG[index]
     st.subheader(title)
     st.caption("Fictional sample content · learning program demo")
@@ -39,6 +41,7 @@ def show_document(index):
 
 
 def render_library(result=None, *, expanded=False):
+    """List the sample documents and mark any that support the current answer."""
     with st.container(key="document_panel"):
         st.html(f'<div class="panel-heading"><h2>Learning documents</h2>'
                 f'<span class="count-badge">{len(DOCUMENT_CATALOG)} documents</span></div>')
@@ -56,6 +59,7 @@ def render_library(result=None, *, expanded=False):
 
 
 def render_suggestions():
+    """Show example questions to help learners understand what they can ask."""
     with st.container(key="question_suggestions"):
         st.html('<p class="suggestions-heading">☼ &nbsp; Try asking</p>')
         for index, question in enumerate(SUGGESTED_QUESTIONS):
@@ -64,6 +68,7 @@ def render_suggestions():
 
 
 def render_answer():
+    """Display the latest answer and source links, or explain an error or empty result."""
     if st.session_state.get(ERROR_KEY):
         st.error(st.session_state[ERROR_KEY])
     result = st.session_state.get(RESULT_KEY)
@@ -96,8 +101,11 @@ def render_answer():
 
 
 def main():
+    """Build the learning interface, load its connection settings, and handle question submissions."""
+    # Apply the shared page identity and theme before showing the learning workspace.
     st.set_page_config(page_title=APP_TITLE, page_icon="📖", layout="wide")
     st.html(f'<style>{(ASSETS_DIRECTORY / "styles.css").read_text(encoding="utf-8")}</style>')
+    # Let learners switch between asking a question and browsing original documents.
     with st.sidebar:
         st.html('<div class="brand-mark">♧</div><div class="brand-name">Learning<br>Assistant</div>')
         page = st.radio("Navigation", NAVIGATION_OPTIONS, label_visibility="collapsed")
@@ -110,6 +118,7 @@ def main():
         render_library(expanded=True)
         return
 
+    # Load private connection settings from Streamlit; the interface can still show documents before setup.
     try:
         secrets = dict(st.secrets)
     except (FileNotFoundError, StreamlitSecretNotFoundError):
@@ -120,6 +129,7 @@ def main():
         st.error("The assistant needs a configuration update. Please contact the administrator.")
         return
 
+    # Place the question and answer beside the source library so learners can check the evidence.
     main_column, library_column = st.columns([2.5, 1], gap="large")
     with main_column:
         book = (ASSETS_DIRECTORY / "book.svg").read_text(encoding="utf-8")
@@ -129,6 +139,7 @@ def main():
                 f'<div class="hero-art">{book}</div></div>')
         if not settings.api_url:
             st.info("The assistant is being set up. You can explore the documents while we get connected.")
+        # Submit only when the learner chooses Find answer, avoiding a request for every keystroke.
         with st.form("question_form"):
             st.html('<div class="composer-title">Ask your learning assistant</div>')
             question = st.text_area("Your question", placeholder=QUESTION_PLACEHOLDER,
@@ -140,6 +151,7 @@ def main():
             with action:
                 submitted = st.form_submit_button("Find answer ↗", type="primary",
                                                   width="stretch", disabled=not settings.api_url)
+        # Clear the previous result and show progress, so a failed question never leaves an old answer visible.
         if submitted:
             for key in (RESULT_KEY, QUESTION_KEY, ERROR_KEY):
                 st.session_state.pop(key, None)

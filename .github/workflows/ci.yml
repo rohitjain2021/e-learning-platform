@@ -1,5 +1,7 @@
+# Check code first, then deploy trusted main-branch changes through CloudFormation.
 name: Check and deploy
 
+# Run checks for proposed changes and main updates; allow maintainers to start a run manually.
 on:
   push:
     branches: [main]
@@ -7,28 +9,38 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Default to reading repository code; only the deployment job can request an AWS identity token.
 permissions:
   contents: read
 
+# Shared workflow settings are defined here once for both checking and deployment.
 env:
+  # Match the Python version used for application and deployment tooling.
   PYTHON_VERSION: '3.12'
+  # Component locations keep dependencies, tests, and build steps organized.
   FRONTEND_DIRECTORY: streamlit-ui
   BACKEND_DIRECTORY: backend
   INFRASTRUCTURE_DIRECTORY: infrastructure
+  # Deploy into this AWS region; deployment defaults and optional tooling use the same region.
   AWS_REGION: us-east-1
+  # Use the development environment; keep other environments separate.
   DEPLOYMENT_STAGE: dev
 
+# Independent jobs separate code validation from privileged AWS deployment.
 jobs:
+  # Check dependencies, template syntax, full CloudFormation lint, and tests without AWS access.
   dependencies:
     name: Check frontend, Python, and Serverless dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Download the exact commit being checked; do not leave Git write credentials on the runner.
       - name: Check out repository
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
+      # Install the shared Python version so local and pipeline behavior match.
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -40,23 +52,28 @@ jobs:
             ${{ env.BACKEND_DIRECTORY }}/requirements.txt
             ${{ env.INFRASTRUCTURE_DIRECTORY }}/requirements-dev.txt
 
+      # Install application and infrastructure-check packages from the recorded manifests.
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt -r infrastructure/requirements-dev.txt
 
+      # Reject malformed YAML, broken cross-file references, and unsafe deployment behavior.
       - name: Validate infrastructure YAML and deployment guards
         run: |
           python infrastructure/scripts/validate.py
           python -m unittest discover -s infrastructure/tests -v
 
+      # Detect incompatible packages and verify that the required libraries can be imported.
       - name: Check Python dependencies
         run: |
           python -m pip check
           python -c "import streamlit, requests, boto3"
 
+      # Exercise the question, answer, source-link, and error flows with simulated backend responses.
       - name: Test frontend and API integration behavior
         working-directory: ${{ env.FRONTEND_DIRECTORY }}
         run: python -m unittest discover -s tests -v
 
+      # Install Node.js for the optional Serverless tooling, using the component version file.
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -64,38 +81,47 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ env.INFRASTRUCTURE_DIRECTORY }}/package-lock.json
 
+      # Use the lockfile to install the exact optional tooling dependency tree.
       - name: Install Serverless Framework tooling
         working-directory: ${{ env.INFRASTRUCTURE_DIRECTORY }}
         run: npm ci
 
+      # Confirm the optional Serverless dependency is installed correctly; no deployment runs here.
       - name: Check Serverless dependency
         working-directory: ${{ env.INFRASTRUCTURE_DIRECTORY }}
         run: npm ls serverless --depth=0
 
+      # Confirm that local and pull-request runs cannot invoke privileged Serverless commands.
       - name: Test the pipeline-only deployment guard
         run: node --test infrastructure/tests/pipeline-guard.test.cjs
 
+  # Deploy only after checks pass and only from this repository's main branch.
   deploy:
     name: Deploy infrastructure through CloudFormation
     needs: dependencies
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Run one deployment at a time so two workflow runs cannot modify the stack together.
     concurrency:
       group: e-learning-platform-dev-deployment
       cancel-in-progress: false
+    # Allow this job to obtain a temporary identity token instead of storing AWS access keys.
     permissions:
       contents: read
       id-token: write
+    # Read the deployment-role ARN from repository variables; never embed credentials in this file.
     env:
       CI: 'true'
       AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
     steps:
+      # Download the exact commit being checked; do not leave Git write credentials on the runner.
       - name: Check out repository
         uses: actions/checkout@v6
         with:
           persist-credentials: false
 
+      # Fail clearly if the one-time deployment-role setup is missing.
       - name: Check deployment configuration
         shell: bash
         run: |
@@ -104,11 +130,13 @@ jobs:
             exit 1
           fi
 
+      # Install the shared Python version so local and pipeline behavior match.
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      # Exchange GitHub's identity token for temporary, project-scoped AWS credentials.
       - name: Assume the project deployment role through OIDC
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
         with:
@@ -116,13 +144,16 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-e-learning-deploy
 
+      # Install the Python AWS SDK and validation tools; deployment needs no Serverless license.
       - name: Install deployment tooling
         run: |
           python -m pip install -r backend/requirements.txt -r infrastructure/requirements-dev.txt
 
+      # Review the change set for removals or replacements, deploy, and verify the resulting resources.
       - name: Validate YAML, deploy CloudFormation, and verify
         run: python infrastructure/scripts/deploy.py
 
+      # Keep readable deployment evidence for troubleshooting; do not upload credentials or state files.
       - name: Upload readable deployment templates and summary
         if: always()
         uses: actions/upload-artifact@v4

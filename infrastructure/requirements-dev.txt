@@ -1,2 +1,3 @@
-# Used only for infrastructure YAML checks and readable generated artifacts.
+# Used only for infrastructure validation and readable generated artifacts.
 PyYAML==6.0.3
+cfn-lint==1.59.0
