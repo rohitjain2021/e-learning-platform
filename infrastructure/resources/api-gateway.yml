@@ -150,7 +150,7 @@ Resources:
         - StatusCode: '503'
         - StatusCode: '504'
 
-  # Publish only after the method and invoke permission exist.
+  # Publish the dev stage only after the method and invoke permission exist.
   # The build adds a content hash to this logical ID when API settings change.
   # Retain old snapshots so a stage update never deletes its previous deployment.
   LearningApiDeployment:
@@ -161,15 +161,7 @@ Resources:
     Properties:
       RestApiId:
         Ref: LearningRestApi
-
-  # Keep a stable stage URL while CloudFormation publishes new API snapshots.
-  LearningApiStage:
-    Type: AWS::ApiGateway::Stage
-    Properties:
-      RestApiId:
-        Ref: LearningRestApi
-      DeploymentId:
-        Ref: LearningApiDeployment
+      # Each new snapshot updates this same stage, keeping the URL stable.
       StageName:
         Ref: DeploymentStage
 

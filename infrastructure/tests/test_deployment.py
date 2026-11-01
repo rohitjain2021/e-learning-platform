@@ -118,7 +118,7 @@ class DeploymentSafetyTests(unittest.TestCase):
         import shutil
         import yaml
         before = DEPLOY.build_template()
-        original = before["Resources"]["LearningApiStage"]["Properties"]["DeploymentId"]
+        original = next(name for name in before["Resources"] if name.startswith(DEPLOY.API_DEPLOYMENT_PREFIX))
         with TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copytree(DEPLOY.INFRASTRUCTURE_DIRECTORY / "resources", root / "resources")
@@ -128,9 +128,11 @@ class DeploymentSafetyTests(unittest.TestCase):
             path.write_text(yaml.safe_dump(document), encoding="utf-8")
             with patch.object(DEPLOY, "INFRASTRUCTURE_DIRECTORY", root):
                 after = DEPLOY.build_template()
-        self.assertNotEqual(original, after["Resources"]["LearningApiStage"]["Properties"]["DeploymentId"])
+        current = next(name for name in after["Resources"] if name.startswith(DEPLOY.API_DEPLOYMENT_PREFIX))
+        self.assertNotEqual(original, current)
         self.assertEqual(before["Resources"]["LearningRestApi"], after["Resources"]["LearningRestApi"])
-        deployment = after["Resources"][after["Resources"]["LearningApiStage"]["Properties"]["DeploymentId"]["Ref"]]
+        deployment = after["Resources"][current]
+        self.assertEqual(deployment["Properties"]["StageName"], {"Ref": "DeploymentStage"})
         self.assertIn("LearningPostMethod", deployment["DependsOn"])
         self.assertEqual(deployment["DeletionPolicy"], "Retain")
 

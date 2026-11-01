@@ -96,7 +96,6 @@ def build_template():
             deployment_id = API_DEPLOYMENT_PREFIX + digest
             resources = template["Resources"]
             resources[deployment_id] = resources.pop(API_DEPLOYMENT_PREFIX)
-            resources["LearningApiStage"]["Properties"]["DeploymentId"] = {"Ref": deployment_id}
     return template
 
 
