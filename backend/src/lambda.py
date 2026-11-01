@@ -46,7 +46,9 @@ def source_links(results):
     seen = set()
     for result in results:
         metadata = result.get("metadata", {})
-        uri = metadata.get("x-amz-bedrock-kb-source-uri", "")
+        # Managed knowledge bases put the S3 URI in _document_id.
+        # Keep the older metadata key working for the reference response format too.
+        uri = metadata.get("x-amz-bedrock-kb-source-uri") or metadata.get("_document_id", "")
         if not isinstance(uri, str) or not uri or uri in seen:
             continue
         seen.add(uri)

@@ -86,6 +86,23 @@ class LambdaRetrievalTests(unittest.TestCase):
         self.assertEqual(config["rerankingModelType"], "NONE")
         self.assertEqual(config["foundationModelConfiguration"]["bedrockFoundationModelConfiguration"]["modelConfiguration"]["modelArn"], TEST_MODEL_ARN)
 
+    def test_managed_metadata_returns_a_signed_document_link(self):
+        """Use the managed S3 document ID instead of its private HTTPS source location."""
+        result = {"content": {"text": "Only approved hours count."},
+                  "metadata": {"_data_source_type": "S3", "_document_id": TEST_URI,
+                               "_source_uri": "https://e-learning-platform-knowledge-base.s3.amazonaws.com/demo/learning/program.txt"},
+                  "sourceRetriever": {"identifier": "EXAMPLE1234"}}
+        self.response_stream(results=[result, result])
+        response = APP.lambda_handler({"prompt": "Do pending hours count?"}, None)
+        body = json.loads(response["body"])
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(body["results"], [result, result])
+        self.assertEqual(body["sources"], [{"title": "program.txt", "uri": TEST_URI,
+                                          "url": "https://example.com/temporary-document"}])
+        self.signer.generate_presigned_url.assert_called_once_with(
+            "get_object", Params={"Bucket": "e-learning-platform-knowledge-base",
+                                  "Key": "demo/learning/program.txt"}, ExpiresIn=APP.SOURCE_LINK_EXPIRY_SECONDS)
+
     def test_api_gateway_json_and_base64_bodies_are_supported(self):
         """Accept the HTTP envelope as well as the reference's direct prompt event."""
         for encoded in (False, True):
