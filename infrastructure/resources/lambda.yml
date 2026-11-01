@@ -142,10 +142,11 @@ Resources:
                 Action: [bedrock:Retrieve, bedrock:GetDocumentContent]
                 Resource:
                   Fn::GetAtt: [LearningKnowledgeBase, KnowledgeBaseArn]
-              # Permit streamed inference only through the selected account inference profile.
+              # Bedrock reads the selected profile before using it for streamed inference.
+              # Scope both permissions to this profile instead of all account profiles.
               - Sid: UseSelectedAnswerProfile
                 Effect: Allow
-                Action: bedrock:InvokeModelWithResponseStream
+                Action: [bedrock:GetInferenceProfile, bedrock:InvokeModelWithResponseStream]
                 Resource:
                   Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${AnswerInferenceProfileId}
               # Cross-region inference also needs its destination model ARNs.
