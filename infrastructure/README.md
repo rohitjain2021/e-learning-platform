@@ -66,3 +66,11 @@ Resource files are template fragments. Their `Metadata.cfn-lint` settings suppre
 Open the resource template you want to change. Its `Parameters` section at the top defines the inputs used by the resources below it. There is no separate parameter file. `Ref` reads one of those inputs or a resource's ID; `Fn::Sub` builds a name from those values. AWS provides account and region identifiers automatically. The build combines these templates into one stack. Shared inputs such as `ProjectName` and `DeploymentStage` are declared in each template that uses them; conflicting definitions stop the build rather than silently overwriting a setting.
 
 The separate bootstrap stack declares its own inputs at the top because it must work before the application stack exists. Workflow settings are grouped in the workflow-level `env`; Python application settings live in `streamlit-ui/app_config.py`, and deployment paths and waiting limits are grouped at the top of `scripts/deploy.py`. Request-specific results and temporary loop values stay inside their functions. Credentials come from secrets or temporary AWS sessions, never from the global configuration files.
+
+## E-learning Lambda
+
+`resources/lambda.yml` defines the Python 3.14 `E-learning` function, its log group, and its scoped retrieval role. Inputs are declared at the top of that template. It uses `agentic_retrieve_stream` with Nova Pro to return `answer`, `citations`, and `results`, plus temporary project-document source links for Streamlit.
+
+The pipeline stages pinned backend dependencies for Python 3.14 on Linux, packages source plus the SDK, and uploads the encrypted ZIP under the existing project artifact prefix. A content-based key changes only when the package contents change. Unit tests simulate retrieval; the post-deployment `{"action":"health"}` check avoids paid model calls.
+
+The bootstrap deployment-role template includes scoped permissions for the function, its execution role, and its log group. Apply those permissions through the approved bootstrap process before enabling the first Lambda deployment. The application role cannot expand its own access. No API Gateway or public function URL is provisioned in this change. See the [backend guide](../backend/README.md) for the reference-function coverage, configuration, source-link limits, and document-sync prerequisite.

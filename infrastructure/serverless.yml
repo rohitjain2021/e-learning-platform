@@ -5,6 +5,10 @@ custom:
   deploymentStage: ${opt:stage, 'dev'}
   awsRegion: ${opt:region, 'us-east-1'}
   deploymentArtifactBucketName: serverless-framework-deployments-us-east-1-5b907a5f-c0ac
+  # Supply the runtime trust and prebuilt package values before using this optional tool.
+  knowledgeBaseTrustResourceId: ${env:KNOWLEDGE_BASE_TRUST_ID}
+  knowledgeBaseBootstrapTrustExpiresAt: ${env:KNOWLEDGE_BASE_BOOTSTRAP_EXPIRES_AT, '1970-01-01T00:00:00Z'}
+  lambdaArtifactKey: ${env:LAMBDA_ARTIFACT_KEY}
 
 # Keep the service name aligned with the project so optional tooling targets the same stack.
 service: ${self:custom.projectName}
@@ -27,9 +31,11 @@ provider:
     - ParameterKey: DeploymentStage
       ParameterValue: ${self:custom.deploymentStage}
     - ParameterKey: KnowledgeBaseTrustResourceId
-      ParameterValue: ${env:KNOWLEDGE_BASE_TRUST_ID}
+      ParameterValue: ${self:custom.knowledgeBaseTrustResourceId}
     - ParameterKey: KnowledgeBaseBootstrapTrustExpiresAt
-      ParameterValue: ${env:KNOWLEDGE_BASE_BOOTSTRAP_EXPIRES_AT, '1970-01-01T00:00:00Z'}
+      ParameterValue: ${self:custom.knowledgeBaseBootstrapTrustExpiresAt}
+    - ParameterKey: LambdaArtifactKey
+      ParameterValue: ${self:custom.lambdaArtifactKey}
   # Label the deployed stack for ownership and cost tracking.
   stackTags:
     Project: ${self:custom.projectName}
@@ -38,3 +44,4 @@ resources:
   - ${file(resources/knowledge-base-storage.yml)}
   - ${file(resources/knowledge-base.yml)}
   - ${file(resources/knowledge-base-logging.yml)}
+  - ${file(resources/lambda.yml)}

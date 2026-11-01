@@ -20,6 +20,10 @@ env:
   RUNNER_IMAGE: &runner_image ubuntu-26.04
   # Match the Python version used for application and deployment tooling.
   PYTHON_VERSION: '3.12'
+  # Exercise the starter function on the same Python version used by AWS Lambda.
+  BACKEND_PYTHON_VERSION: '3.14'
+  # Stage only production backend packages for the Lambda ZIP.
+  BACKEND_DEPENDENCY_DIRECTORY: infrastructure/.serverless/backend-dependencies
   # Component locations keep dependencies, tests, and build steps organized.
   FRONTEND_DIRECTORY: streamlit-ui
   BACKEND_DIRECTORY: backend
@@ -98,10 +102,35 @@ jobs:
       - name: Test the pipeline-only deployment guard
         run: node --test infrastructure/tests/pipeline-guard.test.cjs
 
+  # Test the Lambda on its managed runtime version without AWS credentials.
+  backend:
+    name: Test Python Lambda
+    runs-on: *runner_image
+    timeout-minutes: 10
+    steps:
+      # Read the same commit that will be packaged for deployment.
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # Keep runtime compatibility checks separate from frontend tooling.
+      - name: Set up Lambda Python version
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.BACKEND_PYTHON_VERSION }}
+      # Install the pinned AWS SDK so tests exercise the same API shapes shipped to Lambda.
+      - name: Install backend dependencies
+        working-directory: ${{ env.BACKEND_DIRECTORY }}
+        run: python -m pip install -r requirements.txt
+      # Simulate Bedrock streams; unit tests do not query documents or invoke a paid model.
+      - name: Test Lambda response
+        working-directory: ${{ env.BACKEND_DIRECTORY }}
+        run: python -m unittest discover -s tests -v
+
   # Deploy only after checks pass and only from this repository's main branch.
   deploy:
     name: Deploy infrastructure through CloudFormation
-    needs: dependencies
+    needs: [dependencies, backend]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: *runner_image
     timeout-minutes: 45
@@ -151,6 +180,13 @@ jobs:
       - name: Install deployment tooling
         run: |
           python -m pip install -r backend/requirements.txt -r infrastructure/requirements-dev.txt
+
+      # Bundle the pinned Boto3 SDK instead of depending on the managed runtime's SDK version.
+      - name: Stage Lambda dependencies
+        run: |
+          python -m pip install -r backend/requirements.txt --target "$BACKEND_DEPENDENCY_DIRECTORY" \
+            --python-version "$BACKEND_PYTHON_VERSION" --platform manylinux2014_x86_64 \
+            --implementation cp --only-binary=:all: --no-compile
 
       # Review the change set for removals or replacements, deploy, and verify the resulting resources.
       - name: Validate YAML, deploy CloudFormation, and verify

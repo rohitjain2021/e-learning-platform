@@ -82,7 +82,7 @@ The Streamlit interface lets users enter a question, read the answer, and open t
 | Area | Responsibility |
 | --- | --- |
 | `streamlit-ui/` | Frontend, API client, UI tests, and frontend dependencies. |
-| `backend/` | Backend dependencies and future Python API and retrieval code. |
+| `backend/` | Starter Python Lambda, backend dependencies, and tests. |
 | `infrastructure/` | AWS resources, global infrastructure settings, and deployment tooling. |
 | `docs/` | Shared architecture and demo documentation. |
 | `data/demo/` | Fictional source documents used for demonstrations. |
@@ -160,3 +160,7 @@ The deployment job uses GitHub OIDC, merges and validates the native YAML templa
 The knowledge base and embeddings help find information. **Credentials serve a different purpose: they control access to AWS services.** The diagram does not specify an API key or sign-in mechanism.
 
 Lambda should use an IAM execution role with the permissions it needs. AWS secret keys should never be embedded in the frontend or committed to this repository.
+
+## E-learning Lambda
+
+The backend implements the reference function's agentic retrieval flow on Python 3.14. It reads a question, uses Nova Pro through `agentic_retrieve_stream`, and returns the generated answer, citations, and retrieved results. It also formats source links for the Streamlit interface. CI/CD packages the source and pinned AWS SDK, while a separate health request verifies deployment without calling the model. The deployment-role update, document synchronization, and API connection steps are described in the [backend guide](backend/README.md).

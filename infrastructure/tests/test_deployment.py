@@ -109,8 +109,59 @@ class DeploymentSafetyTests(unittest.TestCase):
         from unittest.mock import Mock
         client = Mock()
         with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(RuntimeError, "GitHub Actions"):
-            DEPLOY.package_and_deploy(client, "example-stack", "*")
+            DEPLOY.package_and_deploy(client, "example-stack", "*", artifact_key="serverless/project/dev/lambda/test.zip")
         client.create_change_set.assert_not_called()
+
+    def test_backend_packaging_is_blocked_outside_the_pipeline(self):
+        """Local validation must not upload application artifacts to AWS."""
+        with patch.dict(os.environ, {}, clear=True), patch.object(DEPLOY.boto3, "client") as client:
+            with self.assertRaisesRegex(RuntimeError, "GitHub Actions"):
+                DEPLOY.package_backend(DEPLOY.build_template())
+        client.assert_not_called()
+
+    def test_backend_zip_contains_source_and_pinned_dependencies(self):
+        """Build a repeatable ZIP containing source and only the staged production dependencies."""
+        import io
+        from unittest.mock import Mock
+        from zipfile import ZipFile
+        s3 = Mock()
+        environment = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
+                       "GITHUB_REF": DEPLOY.EXPECTED_REF}
+        with TemporaryDirectory() as directory:
+            dependencies = Path(directory)
+            (dependencies / "sdk_test.py").write_text("# Simulated pinned dependency", encoding="utf-8")
+            with patch.object(DEPLOY, "BACKEND_DEPENDENCY_DIRECTORY", dependencies), patch.dict(os.environ, environment, clear=True), patch.object(DEPLOY.boto3, "client", return_value=s3):
+                first = DEPLOY.package_backend(DEPLOY.build_template())
+                second = DEPLOY.package_backend(DEPLOY.build_template())
+        self.assertEqual(first, second)
+        self.assertTrue(first.startswith("serverless/e-learning-platform/dev/lambda/"))
+        arguments = s3.put_object.call_args.kwargs
+        self.assertEqual(arguments["ServerSideEncryption"], "AES256")
+        with ZipFile(io.BytesIO(arguments["Body"])) as package:
+            self.assertEqual(package.namelist(), ["lambda.py", "sdk_test.py"])
+            self.assertEqual(package.read("lambda.py"), (DEPLOY.BACKEND_SOURCE_DIRECTORY / "lambda.py").read_bytes())
+
+    def test_lambda_execution_role_scopes_documents_knowledge_base_and_model(self):
+        """Keep all new retrieval permissions limited to the project and chosen inference profile."""
+        resources = DEPLOY.build_template()["Resources"]
+        role = resources["LearningLambdaServiceRole"]["Properties"]
+        statements = role["Policies"][0]["PolicyDocument"]["Statement"]
+        self.assertEqual(len(statements), 1)
+        self.assertEqual(statements[0]["Action"], ["logs:CreateLogStream", "logs:PutLogEvents"])
+        self.assertEqual(statements[0]["Resource"], {"Fn::GetAtt": ["LearningLambdaLogGroup", "Arn"]})
+        retrieval = {item["Sid"]: item for item in role["Policies"][1]["PolicyDocument"]["Statement"]}
+        self.assertEqual(retrieval["ReadOnlyProjectKnowledgeBase"]["Resource"], {"Fn::GetAtt": ["LearningKnowledgeBase", "KnowledgeBaseArn"]})
+        self.assertEqual(retrieval["StartRegionalAgenticRetrieval"]["Condition"]["StringEquals"]["aws:RequestedRegion"], {"Ref": "AWS::Region"})
+        self.assertEqual(retrieval["OpenProjectSourceDocuments"]["Action"], "s3:GetObject")
+        self.assertIn("bedrock:InferenceProfileArn", retrieval["UseProfileDestinationModels"]["Condition"]["ArnEquals"])
+        self.assertNotIn("LearningLambdaFunctionUrl", resources)
+
+    def test_lambda_filename_handler_and_two_minute_limit_match(self):
+        """Keep packaging, handler configuration, and the requested execution limit in agreement."""
+        template = DEPLOY.build_template()
+        self.assertEqual(template["Parameters"]["LambdaHandler"]["Default"], "lambda.lambda_handler")
+        self.assertEqual(template["Parameters"]["LambdaTimeoutSeconds"]["Default"], 120)
+        self.assertEqual(DEPLOY.BACKEND_SOURCE_FILES, ("lambda.py",))
 
     def test_change_set_preserves_overrides_and_executes_without_serverless(self):
         from unittest.mock import Mock
@@ -123,7 +174,7 @@ class DeploymentSafetyTests(unittest.TestCase):
         environment = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
                        "GITHUB_REF": DEPLOY.EXPECTED_REF}
         with TemporaryDirectory() as directory, patch.object(DEPLOY, "ARTIFACT_DIRECTORY", Path(directory)), patch.dict(os.environ, environment, clear=True):
-            DEPLOY.package_and_deploy(client, "example-stack", "*")
+            DEPLOY.package_and_deploy(client, "example-stack", "*", artifact_key="serverless/project/dev/lambda/test.zip")
         arguments = client.create_change_set.call_args.kwargs
         self.assertIn({"ParameterKey": "KnowledgeBaseSourcePrefix", "UsePreviousValue": True}, arguments["Parameters"])
         self.assertEqual(arguments["ChangeSetType"], "UPDATE")
@@ -140,7 +191,7 @@ class DeploymentSafetyTests(unittest.TestCase):
         environment = {"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": DEPLOY.EXPECTED_REPOSITORY,
                        "GITHUB_REF": DEPLOY.EXPECTED_REF}
         with TemporaryDirectory() as directory, patch.object(DEPLOY, "ARTIFACT_DIRECTORY", Path(directory)), patch.dict(os.environ, environment, clear=True):
-            DEPLOY.package_and_deploy(client, "example-stack", "EXAMPLE123")
+            DEPLOY.package_and_deploy(client, "example-stack", "EXAMPLE123", artifact_key="serverless/project/dev/lambda/test.zip")
         client.execute_change_set.assert_not_called()
         client.delete_change_set.assert_called_once_with(ChangeSetName="example-change-set")
 
@@ -155,7 +206,7 @@ class DeploymentSafetyTests(unittest.TestCase):
                        "GITHUB_REF": DEPLOY.EXPECTED_REF}
         with TemporaryDirectory() as directory, patch.object(DEPLOY, "ARTIFACT_DIRECTORY", Path(directory)), patch.dict(os.environ, environment, clear=True):
             with self.assertRaisesRegex(RuntimeError, "migration"):
-                DEPLOY.package_and_deploy(client, "example-stack", "*")
+                DEPLOY.package_and_deploy(client, "example-stack", "*", artifact_key="serverless/project/dev/lambda/test.zip")
         client.execute_change_set.assert_not_called()
 
     def test_aws_access_errors_are_not_treated_as_missing_stack(self):

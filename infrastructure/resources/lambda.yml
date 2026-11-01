@@ -1,0 +1,229 @@
+# Define this template's inputs here and reference them in the resources below.
+Parameters:
+  # Keep ownership labels consistent with the other project templates.
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  # Lambda names cannot contain spaces, so the requested name is written E-learning.
+  LambdaFunctionName:
+    Type: String
+    Default: E-learning
+    AllowedPattern: '[a-zA-Z0-9_-]+'
+    MaxLength: 64
+  # Python 3.14 is the latest generally available Lambda Python runtime at creation.
+  LambdaRuntime:
+    Type: String
+    Default: python3.14
+    AllowedValues: [python3.14]
+  # The ZIP contains lambda.py at its root; Lambda calls this function inside that module.
+  LambdaHandler:
+    Type: String
+    Default: lambda.lambda_handler
+  # Leave enough time for iterative retrieval and model response generation.
+  LambdaMemorySize:
+    Type: Number
+    Default: 128
+    MinValue: 128
+    MaxValue: 10240
+  # Stop execution after two minutes (120 seconds).
+  LambdaTimeoutSeconds:
+    Type: Number
+    Default: 120
+    MinValue: 1
+    MaxValue: 900
+  # Keep function diagnostics for a limited time rather than indefinitely.
+  LambdaLogRetentionDays:
+    Type: Number
+    Default: 30
+  # Match the document-source settings used by the storage and knowledge-base templates.
+  KnowledgeBaseBucketName:
+    Type: String
+    Default: e-learning-platform-knowledge-base
+  KnowledgeBaseSourcePrefix:
+    Type: String
+    Default: demo/learning/
+  # Use the same Nova Pro inference-profile choice as the reference Lambda.
+  # CloudFormation builds its ARN using this project's account and region.
+  AnswerInferenceProfileId:
+    Type: String
+    Default: us.amazon.nova-pro-v1:0
+  # These are the verified destination models for that US inference profile.
+  # If the profile changes, review this list and its IAM scope together.
+  AnswerFoundationModelArns:
+    Type: CommaDelimitedList
+    Default: arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-pro-v1:0,arn:aws:bedrock:us-east-2::foundation-model/amazon.nova-pro-v1:0,arn:aws:bedrock:us-west-2::foundation-model/amazon.nova-pro-v1:0
+  # Bound iterative searches so one question cannot run indefinitely.
+  MaxAgentIterations:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 10
+  # Document links grant temporary access only to this project's source folder.
+  SourceLinkExpirySeconds:
+    Type: Number
+    Default: 300
+    MinValue: 60
+    MaxValue: 900
+  # Reuse the existing private deployment bucket, separate from the source documents.
+  DeploymentArtifactBucketName:
+    Type: String
+    Default: serverless-framework-deployments-us-east-1-5b907a5f-c0ac
+  # The pipeline supplies the key of the ZIP built from this commit's backend source.
+  LambdaArtifactKey:
+    Type: String
+    MinLength: 1
+
+# Knowledge-base identifiers come from another template; full-stack lint checks those references.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E1010, E1020]
+
+# Create function logging and the scoped runtime role before creating the function.
+Resources:
+  # Precreate the log group so the runtime needs no permission to create arbitrary log groups.
+  LearningLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/lambda/${LambdaFunctionName}
+      RetentionInDays:
+        Ref: LambdaLogRetentionDays
+      Tags:
+        - Key: Project
+          Value:
+            Ref: ProjectName
+
+  # Allow only project logs, the selected knowledge base, source links, and the chosen model.
+  LearningLambdaServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-lambda-service
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WriteOwnFunctionLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource:
+                  Fn::GetAtt: [LearningLambdaLogGroup, Arn]
+        - PolicyName: AgenticLearningRetrieval
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # This API has no resource-level IAM scope; restrict its requested region.
+              - Sid: StartRegionalAgenticRetrieval
+                Effect: Allow
+                Action: bedrock:AgenticRetrieveStream
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion:
+                      Ref: AWS::Region
+              # Restrict search and full-document expansion to this project's knowledge base.
+              - Sid: ReadOnlyProjectKnowledgeBase
+                Effect: Allow
+                Action: [bedrock:Retrieve, bedrock:GetDocumentContent]
+                Resource:
+                  Fn::GetAtt: [LearningKnowledgeBase, KnowledgeBaseArn]
+              # Permit streamed inference only through the selected account inference profile.
+              - Sid: UseSelectedAnswerProfile
+                Effect: Allow
+                Action: bedrock:InvokeModelWithResponseStream
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${AnswerInferenceProfileId}
+              # Cross-region inference also needs its destination model ARNs.
+              # The condition prevents direct invocation outside the chosen profile.
+              - Sid: UseProfileDestinationModels
+                Effect: Allow
+                Action: bedrock:InvokeModelWithResponseStream
+                Resource:
+                  Ref: AnswerFoundationModelArns
+                Condition:
+                  ArnEquals:
+                    bedrock:InferenceProfileArn:
+                      Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${AnswerInferenceProfileId}
+              # Temporary source links work only for documents in the configured S3 folder.
+              - Sid: OpenProjectSourceDocuments
+                Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:s3:::${KnowledgeBaseBucketName}/${KnowledgeBaseSourcePrefix}*
+                Condition:
+                  StringEquals:
+                    aws:ResourceAccount:
+                      Ref: AWS::AccountId
+      Tags:
+        - Key: Project
+          Value:
+            Ref: ProjectName
+
+  # Run the Python code uploaded by CI/CD, without API Gateway or a public function URL.
+  LearningLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName:
+        Ref: LambdaFunctionName
+      Description: Answer learning questions with Nova Pro agentic retrieval and supporting sources
+      Runtime:
+        Ref: LambdaRuntime
+      Handler:
+        Ref: LambdaHandler
+      MemorySize:
+        Ref: LambdaMemorySize
+      Timeout:
+        Ref: LambdaTimeoutSeconds
+      Role:
+        Fn::GetAtt: [LearningLambdaServiceRole, Arn]
+      # Resolve this project's IDs during deployment instead of copying another account's values.
+      Environment:
+        Variables:
+          KNOWLEDGE_BASE_ID:
+            Ref: LearningKnowledgeBase
+          ANSWER_MODEL_ARN:
+            Fn::Sub: arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${AnswerInferenceProfileId}
+          SOURCE_BUCKET:
+            Ref: KnowledgeBaseBucketName
+          SOURCE_PREFIX:
+            Ref: KnowledgeBaseSourcePrefix
+          MAX_AGENT_ITERATIONS:
+            Fn::Sub: ${MaxAgentIterations}
+          SOURCE_LINK_EXPIRY_SECONDS:
+            Fn::Sub: ${SourceLinkExpirySeconds}
+      Code:
+        S3Bucket:
+          Ref: DeploymentArtifactBucketName
+        S3Key:
+          Ref: LambdaArtifactKey
+      Tags:
+        - Key: Project
+          Value:
+            Ref: ProjectName
+
+# Return stable identifiers for the pipeline's post-deployment checks.
+Outputs:
+  LearningLambdaFunctionName:
+    Value:
+      Ref: LearningLambdaFunction
+  LearningLambdaFunctionArn:
+    Value:
+      Fn::GetAtt: [LearningLambdaFunction, Arn]
+  LearningLambdaRuntime:
+    Value:
+      Ref: LambdaRuntime

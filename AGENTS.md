@@ -28,6 +28,8 @@
 
 ## Readable code and comments
 
+- Follow KISS: keep code straightforward and easy to read. Prefer a clear sequence of steps and ordinary functions; add helper classes, decorators, and abstraction only when they solve an actual requirement. Use the original RAG example as the guide for the Lambda request flow.
+
 - Add a plain-language comment above each infrastructure resource, policy purpose, configuration group, and workflow section. Explain what it does, why it is needed, and its practical benefit.
 - Give application and deployment functions a short docstring explaining their purpose. Explain non-obvious safety checks and processing stages without repeating every line of code.
 - Keep configurable defaults at the top of the file or template that uses them. Do not move template inputs into a separate parameter file. Values calculated for a request or deployment stay local to the function using them. Fixed AWS schema values and policy actions are not configurable project settings.
