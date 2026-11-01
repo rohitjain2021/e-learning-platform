@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 
-from botocore.exceptions import ReadTimeoutError
+from botocore.exceptions import ClientError, ReadTimeoutError
 from botocore.session import Session
 from botocore.validate import validate_parameters
 
@@ -40,13 +40,15 @@ class LambdaRetrievalTests(unittest.TestCase):
         """Supply project configuration and simulated SDK clients for each isolated request."""
         self.client = Mock()
         self.signer = Mock()
+        self.notifications = Mock()
         self.signer.generate_presigned_url.return_value = "https://example.com/temporary-document"
         for name, value in {"KNOWLEDGE_BASE_ID": "EXAMPLE1234", "ANSWER_MODEL_ARN": TEST_MODEL_ARN,
-                            "SOURCE_BUCKET": "e-learning-platform-knowledge-base", "SOURCE_PREFIX": "demo/learning/"}.items():
+                            "SOURCE_BUCKET": "e-learning-platform-knowledge-base", "SOURCE_PREFIX": "demo/learning/",
+                            "NOTIFICATION_TOPIC_ARN": "arn:aws:sns:us-east-1:123456789012:learning-notifications"}.items():
             cleanup = patch.object(APP, name, value)
             cleanup.start()
             self.addCleanup(cleanup.stop)
-        for name, client in (("BEDROCK", self.client), ("S3", self.signer)):
+        for name, client in (("BEDROCK", self.client), ("S3", self.signer), ("SNS", self.notifications)):
             cleanup = patch.object(APP, name, client)
             cleanup.start()
             self.addCleanup(cleanup.stop)
@@ -123,6 +125,7 @@ class LambdaRetrievalTests(unittest.TestCase):
             with self.subTest(event=event):
                 self.assertEqual(APP.lambda_handler(event, None)["statusCode"], 400)
         self.client.agentic_retrieve_stream.assert_not_called()
+        self.notifications.publish.assert_not_called()
 
     def test_missing_configuration_returns_a_safe_error(self):
         """An unset model or knowledge base must not result in an unintended AWS request."""
@@ -224,6 +227,47 @@ class LambdaRetrievalTests(unittest.TestCase):
         response = APP.lambda_handler({"action": "health"}, None)
         self.assertEqual(json.loads(response["body"])["status"], "ready")
         self.client.agentic_retrieve_stream.assert_not_called()
+        self.notifications.publish.assert_not_called()
+
+    def test_valid_question_sends_one_notification_before_the_bedrock_call(self):
+        """Stream chunks must not create duplicate emails; preserve the submitted text and request ID."""
+        self.response_stream()
+        order = Mock()
+        order.attach_mock(self.notifications.publish, "publish")
+        order.attach_mock(self.client.agentic_retrieve_stream, "retrieve")
+        context = Mock(aws_request_id="request-123")
+        context.get_remaining_time_in_millis.return_value = 120000
+        response = APP.lambda_handler({"prompt": "  Do pending hours count?  "}, context)
+        self.assertEqual(response["statusCode"], 200)
+        self.notifications.publish.assert_called_once()
+        self.assertEqual(order.mock_calls[0][0], "publish")
+        message = self.notifications.publish.call_args.kwargs
+        self.assertEqual(message["TopicArn"], APP.NOTIFICATION_TOPIC_ARN)
+        self.assertIn("Question:\nDo pending hours count?", message["Message"])
+        self.assertIn("Request ID: request-123", message["Message"])
+        self.assertIn("Time (UTC):", message["Message"])
+
+    def test_notification_failure_is_monitored_without_breaking_the_answer(self):
+        """An SNS permission or service error should trigger the failure marker, not lose the answer."""
+        self.response_stream()
+        self.notifications.publish.side_effect = ClientError(
+            {"Error": {"Code": "AuthorizationError", "Message": "Private user question"}}, "Publish")
+        with self.assertLogs(APP.LOGGER, level="INFO") as captured:
+            response = APP.lambda_handler({"prompt": "Private user question"}, None)
+        self.assertEqual(response["statusCode"], 200)
+        output = " ".join(captured.output)
+        self.assertIn("QUESTION_NOTIFICATION_FAILED", output)
+        self.assertIn("BEDROCK_REQUEST_STARTED", output)
+        self.assertNotIn("Private user question", output)
+
+    def test_bedrock_failure_still_has_a_question_notification(self):
+        """The notification describes a submitted attempt, even if the AI service rejects it."""
+        self.client.agentic_retrieve_stream.side_effect = ClientError(
+            {"Error": {"Code": "ThrottlingException", "Message": "Busy"}}, "AgenticRetrieveStream")
+        with self.assertLogs(APP.LOGGER, level="INFO"):
+            response = APP.lambda_handler({"prompt": "Question"}, None)
+        self.assertEqual(response["statusCode"], 429)
+        self.notifications.publish.assert_called_once()
 
     def test_lambda_filename_can_be_imported_by_the_runtime(self):
         """The AWS runtime loads lambda.py by module name even though lambda is a Python keyword."""

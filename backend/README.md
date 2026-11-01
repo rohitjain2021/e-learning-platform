@@ -15,6 +15,8 @@ The code follows the original `RAG_eLearning_App_v1.0/RAG_eLearning_App/lambda_f
 
 There are no custom exception classes, client-cache decorators, or request-time AWS resource lookups. The two small helpers format JSON responses and build source links. The handler contains the request flow and normal error handling. It accepts both `{"prompt":"..."}` and API Gateway JSON bodies. `{"action":"health"}` checks deployment without invoking a model.
 
+`notify_question` is a small third helper. It counts each valid submission and sends the question, timestamp, and request ID to the configured SNS topic before the Bedrock call. It sends once per request, not for each response chunk. A publishing error is monitored and does not block the answer. Health checks and invalid questions do not send email. `NOTIFICATION_TOPIC_ARN` comes from CloudFormation; email delivery requires the recipient to confirm the SNS subscription.
+
 ## Where the AWS values come from
 
 Local AWS checks use the configured credential profile. The project's CloudFormation stack supplies `KNOWLEDGE_BASE_ID` through its knowledge-base resource reference. It builds `ANSWER_MODEL_ARN` from the deployed account, region, and Nova Pro inference-profile ID. Lambda reads those environment variables at the top of the file and uses its execution role for AWS authentication. The other example account and knowledge-base ID are not copied, and a local AWS profile is not packaged into Lambda.

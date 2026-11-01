@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from urllib.parse import unquote, urlsplit
 
 import boto3
@@ -23,6 +24,10 @@ MAX_AGENT_ITERATIONS = int(os.environ.get("MAX_AGENT_ITERATIONS", "3"))
 # Keep each search focused instead of supplying the whole small demo library.
 MAX_RETRIEVAL_RESULTS = int(os.environ.get("MAX_RETRIEVAL_RESULTS", "2"))
 SOURCE_LINK_EXPIRY_SECONDS = int(os.environ.get("SOURCE_LINK_EXPIRY_SECONDS", "300"))
+# CloudFormation connects this function to the project's email notification topic.
+NOTIFICATION_TOPIC_ARN = os.environ.get("NOTIFICATION_TOPIC_ARN", "")
+NOTIFICATION_SUBJECT = f"{SERVICE_NAME}: new question"
+NOTIFICATION_TIMEOUT_SECONDS = 3
 READ_TIMEOUT_SECONDS = 110  # Leave time to return an error before Lambda's 120-second limit.
 DEADLINE_MARGIN_MILLISECONDS = 5000
 RESPONSE_HEADERS = {"Content-Type": "application/json", "Cache-Control": "no-store"}
@@ -34,12 +39,36 @@ BEDROCK = boto3.client("bedrock-agent-runtime", region_name=AWS_REGION,
                       config=Config(read_timeout=READ_TIMEOUT_SECONDS, connect_timeout=5,
                                     retries={"total_max_attempts": 1}))
 S3 = boto3.client("s3", region_name=AWS_REGION, config=Config(signature_version="s3v4"))
+SNS = boto3.client("sns", region_name=AWS_REGION,
+                   config=Config(connect_timeout=NOTIFICATION_TIMEOUT_SECONDS,
+                                 read_timeout=NOTIFICATION_TIMEOUT_SECONDS,
+                                 retries={"total_max_attempts": 1}))
 
 
 def json_response(status_code, body):
     """Put a JSON result in the response format expected by API Gateway."""
     return {"statusCode": status_code, "headers": dict(RESPONSE_HEADERS),
             "body": json.dumps(body, default=str)}
+
+
+def notify_question(question, context):
+    """Count the request and email its question before attempting Bedrock retrieval."""
+    request_id = getattr(context, "aws_request_id", "local")
+    # This marker becomes a CloudWatch count; the question itself is not written to logs.
+    LOGGER.info("BEDROCK_REQUEST_STARTED request_id=%s", request_id)
+    if not NOTIFICATION_TOPIC_ARN:
+        return
+    message = (f"A question was submitted to {SERVICE_NAME}.\n"
+               f"Time (UTC): {datetime.now(timezone.utc).isoformat()}\n"
+               f"Request ID: {request_id}\n"
+               f"Knowledge base: {KNOWLEDGE_BASE_ID}\n\nQuestion:\n{question}")
+    try:
+        SNS.publish(TopicArn=NOTIFICATION_TOPIC_ARN, Subject=NOTIFICATION_SUBJECT, Message=message)
+        LOGGER.info("QUESTION_NOTIFICATION_SENT request_id=%s", request_id)
+    except (BotoCoreError, ClientError) as error:
+        # An email problem must not prevent an answer; CloudWatch alerts on this marker.
+        LOGGER.error("QUESTION_NOTIFICATION_FAILED request_id=%s error_type=%s",
+                     request_id, type(error).__name__)
 
 
 def source_links(results, citations):
@@ -106,6 +135,8 @@ def lambda_handler(event, context):
     if not KNOWLEDGE_BASE_ID or not ANSWER_MODEL_ARN:
         return json_response(503, {"error": "The assistant needs its knowledge base and model settings."})
 
+    # One notification per valid submitted request, not per planning step or streamed chunk.
+    notify_question(query, context)
     stream = None
     try:
         # 4. Ask Nova Pro to search our knowledge base and generate the answer.

@@ -121,6 +121,15 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
+        # Publish questions only to this project's SNS topic; no other topics are accessible.
+        - PolicyName: PublishQuestionNotifications
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource:
+                  Ref: LearningNotificationTopic
         - PolicyName: WriteOwnFunctionLogs
           PolicyDocument:
             Version: '2012-10-17'
@@ -215,6 +224,8 @@ Resources:
             Fn::Sub: ${MaxRetrievalResults}
           SOURCE_LINK_EXPIRY_SECONDS:
             Fn::Sub: ${SourceLinkExpirySeconds}
+          NOTIFICATION_TOPIC_ARN:
+            Ref: LearningNotificationTopic
       Code:
         S3Bucket:
           Ref: DeploymentArtifactBucketName

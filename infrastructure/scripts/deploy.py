@@ -18,7 +18,7 @@ import yaml
 # Global paths: keep generated files separate from the YAML people edit.
 INFRASTRUCTURE_DIRECTORY = Path(__file__).resolve().parents[1]
 ARTIFACT_DIRECTORY = INFRASTRUCTURE_DIRECTORY / ".serverless"
-RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml", "lambda.yml", "api-gateway.yml")
+RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml", "lambda.yml", "api-gateway.yml", "monitoring.yml")
 # API Gateway snapshots are immutable; a changed API definition needs a new deployment ID.
 API_DEPLOYMENT_PREFIX = "LearningApiDeployment"
 # Package only reviewed backend source files; tests, secrets, and local environments stay out.
@@ -41,6 +41,10 @@ FAILURE_EVENT_LIMIT = 20
 EXPIRED_TRUST_TIMESTAMP = "1970-01-01T00:00:00Z"
 REGION = os.environ.get("AWS_REGION", "us-east-1")
 STAGE = os.environ.get("DEPLOYMENT_STAGE", "dev")
+NOTIFICATION_EMAIL = os.environ.get("NOTIFICATION_EMAIL", "")
+# Keep the alarm identifiers together for the post-deployment checks.
+MONITORING_ALARM_OUTPUT_KEYS = ("LearningNotificationFailureAlarmName", "LearningLambdaErrorAlarmName",
+                                "LearningApiServerErrorAlarmName")
 
 
 def require_pipeline():
@@ -166,6 +170,8 @@ def package_and_deploy(client, stack_name, trust_id, exists=True, artifact_key=N
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
     overrides = {"DeploymentStage": STAGE, "LambdaArtifactKey": artifact_key, "KnowledgeBaseTrustResourceId": trust_id,
                  "KnowledgeBaseBootstrapTrustExpiresAt": expires_at if trust_id == "*" else EXPIRED_TRUST_TIMESTAMP}
+    if NOTIFICATION_EMAIL:
+        overrides["NotificationEmail"] = NOTIFICATION_EMAIL
     parameters = [{"ParameterKey": key, "ParameterValue": value}
                   for key, value in overrides.items()]
     # Preserve deployed overrides on subsequent updates; new parameters use YAML defaults.
@@ -207,6 +213,31 @@ def package_and_deploy(client, stack_name, trust_id, exists=True, artifact_key=N
         for event in client.describe_stack_events(StackName=stack_name)["StackEvents"][:FAILURE_EVENT_LIMIT]:
             print(event["LogicalResourceId"], event["ResourceStatus"], event.get("ResourceStatusReason", ""))
         raise
+
+
+def verify_monitoring(outputs):
+    """Check the email subscription and alarm routing without sending a test email."""
+    topic = outputs["LearningNotificationTopicArn"]
+    sns = boto3.client("sns", region_name=REGION)
+    sns.get_topic_attributes(TopicArn=topic)
+    subscriptions = sns.list_subscriptions_by_topic(TopicArn=topic)["Subscriptions"]
+    matches = [s for s in subscriptions if s["Protocol"] == "email" and s["Endpoint"] == NOTIFICATION_EMAIL]
+    if len(matches) != 1:
+        raise RuntimeError("The configured notification email subscription is missing or duplicated.")
+    confirmed = matches[0]["SubscriptionArn"] != "PendingConfirmation"
+    print("Notification subscription:", "confirmed" if confirmed else "pending owner confirmation")
+    names = [outputs[key] for key in MONITORING_ALARM_OUTPUT_KEYS]
+    alarms = boto3.client("cloudwatch", region_name=REGION).describe_alarms(AlarmNames=names)["MetricAlarms"]
+    if len(alarms) != len(names) or any(
+            a.get("AlarmActions") != [topic] or not a.get("ActionsEnabled", True)
+            or a.get("TreatMissingData") != "notBreaching" for a in alarms):
+        raise RuntimeError("Monitoring alarms are missing or do not route to the project topic.")
+    filters = boto3.client("logs", region_name=REGION).describe_metric_filters(
+        logGroupName=f"/aws/lambda/{outputs['LearningLambdaFunctionName']}")["metricFilters"]
+    metrics = {m["metricName"] for f in filters for m in f["metricTransformations"]}
+    if not {"BedrockRequestAttempts", "QuestionNotificationFailures"}.issubset(metrics):
+        raise RuntimeError("Request or notification-failure monitoring is missing.")
+    return confirmed
 
 
 def verify(outputs):
@@ -260,8 +291,11 @@ def verify(outputs):
     if test["status"] != 400 or "error" not in json.loads(test["body"]):
         raise RuntimeError("API Gateway did not preserve Lambda's invalid-prompt response.")
     print("Verified POST /e-learning mapping: empty prompt returned HTTP 400.")
+    # An unconfirmed email is reported honestly; AWS still creates all monitoring resources.
+    email_confirmed = verify_monitoring(outputs)
     # Save readable deployment evidence for the workflow artifact, without credentials.
-    summary = dict(outputs, KnowledgeBaseStatus=kb["status"], DataSourceStatus=source["status"], LambdaState=configuration["State"])
+    summary = dict(outputs, KnowledgeBaseStatus=kb["status"], DataSourceStatus=source["status"],
+                   LambdaState=configuration["State"], EmailSubscriptionConfirmed=email_confirmed)
     (ARTIFACT_DIRECTORY / "deployment-summary.yml").write_text(
         yaml.safe_dump(summary, sort_keys=False), encoding="utf-8")
     print(f"Verified knowledge base {knowledge_base_id}; exact-resource trust; manual sync.")
@@ -270,6 +304,8 @@ def verify(outputs):
 def main():
     """Deploy from GitHub Actions, tighten first-creation trust, and verify the final result."""
     require_pipeline()
+    if not NOTIFICATION_EMAIL:
+        raise RuntimeError("Set the NOTIFICATION_EMAIL repository variable before deploying monitoring.")
     project_name = build_template()["Parameters"]["ProjectName"]["Default"]
     stack_name = f"{project_name}-{STAGE}"
     cloudformation = boto3.client("cloudformation", region_name=REGION)

@@ -18,7 +18,7 @@ The **knowledge base** is the searchable collection of course content. RAG is th
 
 ## Architecture
 
-![RAG architecture showing the user query flow, document ingestion, and GitHub Actions CI/CD with Serverless Framework](docs/images/rag-knowledge-base-architecture-cicd.png)
+![RAG architecture showing questions, managed document ingestion, monitoring, email notifications, and GitHub Actions CI/CD](docs/images/rag-knowledge-base-architecture-monitoring.png)
 
 **API Gateway and Lambda are both serverless AWS services:** API Gateway receives requests, and Lambda runs the Python backend without us managing servers. The diagram shows **Serverless Framework** as deployment tooling outside the path of a user's question. The current knowledge-base pipeline submits native YAML directly to **CloudFormation**; the optional Serverless entry point imports the same infrastructure definitions.
 
@@ -168,3 +168,9 @@ The backend implements the reference function's agentic retrieval flow on Python
 ## REST API
 
 The API is named **e Learning** and accepts **POST /e-learning** with a JSON question: `{"prompt":"When should I submit my weekly hours?"}`. API Gateway passes the prompt to the existing Lambda and returns its answer and supporting sources. GitHub Actions creates and deploys the API through CloudFormation, then tests that an empty question returns HTTP 400. Use the stack output `LearningApiUrl` as Streamlit's `API_URL`. The demo endpoint currently accepts requests without sign-in; its integration timeout is 29 seconds.
+
+## Monitoring and email notifications
+
+When someone submits a valid question with **Find answer**, Lambda publishes the question, UTC timestamp, and request ID to the project's SNS topic before attempting Bedrock retrieval. SNS emails the configured administrator after the email subscription is confirmed. Typing, selecting a suggestion, health checks, and rejected empty questions do not send notifications.
+
+CloudWatch counts these Bedrock request attempts and alerts on API server errors, unhandled Lambda failures, and notification publishing failures. Questions are sent in the requested email; operational logs omit their text. All resources are defined in YAML and deployed through GitHub Actions. See the [monitoring guide](infrastructure/README.md#monitoring-and-notifications) for setup and verification.

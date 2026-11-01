@@ -46,3 +46,4 @@ resources:
   - ${file(resources/knowledge-base-logging.yml)}
   - ${file(resources/lambda.yml)}
   - ${file(resources/api-gateway.yml)}
+  - ${file(resources/monitoring.yml)}

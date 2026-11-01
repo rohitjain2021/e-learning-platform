@@ -176,16 +176,34 @@ class DeploymentSafetyTests(unittest.TestCase):
         """Keep all new retrieval permissions limited to the project and chosen inference profile."""
         resources = DEPLOY.build_template()["Resources"]
         role = resources["LearningLambdaServiceRole"]["Properties"]
-        statements = role["Policies"][0]["PolicyDocument"]["Statement"]
+        policies = {p["PolicyName"]: p["PolicyDocument"] for p in role["Policies"]}
+        statements = policies["WriteOwnFunctionLogs"]["Statement"]
         self.assertEqual(len(statements), 1)
         self.assertEqual(statements[0]["Action"], ["logs:CreateLogStream", "logs:PutLogEvents"])
         self.assertEqual(statements[0]["Resource"], {"Fn::GetAtt": ["LearningLambdaLogGroup", "Arn"]})
-        retrieval = {item["Sid"]: item for item in role["Policies"][1]["PolicyDocument"]["Statement"]}
+        retrieval = {item["Sid"]: item for item in policies["AgenticLearningRetrieval"]["Statement"]}
         self.assertEqual(retrieval["ReadOnlyProjectKnowledgeBase"]["Resource"], {"Fn::GetAtt": ["LearningKnowledgeBase", "KnowledgeBaseArn"]})
         self.assertEqual(retrieval["StartRegionalAgenticRetrieval"]["Condition"]["StringEquals"]["aws:RequestedRegion"], {"Ref": "AWS::Region"})
         self.assertEqual(retrieval["OpenProjectSourceDocuments"]["Action"], "s3:GetObject")
         self.assertIn("bedrock:InferenceProfileArn", retrieval["UseProfileDestinationModels"]["Condition"]["ArnEquals"])
         self.assertNotIn("LearningLambdaFunctionUrl", resources)
+        self.assertEqual(policies["PublishQuestionNotifications"]["Statement"], [{
+            "Effect": "Allow", "Action": "sns:Publish", "Resource": {"Ref": "LearningNotificationTopic"}}])
+
+    def test_monitoring_is_project_scoped_and_idle_periods_do_not_trigger_alerts(self):
+        """Only the project alarms can publish alerts; an unused app must not be treated as failed."""
+        template = DEPLOY.build_template()
+        resources = template["Resources"]
+        policy = resources["LearningNotificationTopicPolicy"]["Properties"]["PolicyDocument"]["Statement"][0]
+        self.assertEqual(policy["Principal"], {"Service": "cloudwatch.amazonaws.com"})
+        self.assertEqual(policy["Condition"]["StringEquals"]["aws:SourceAccount"], {"Ref": "AWS::AccountId"})
+        self.assertIn("${ProjectName}-${DeploymentStage}-*", policy["Condition"]["ArnLike"]["aws:SourceArn"]["Fn::Sub"])
+        for name in ("LearningNotificationFailureAlarm", "LearningLambdaErrorAlarm", "LearningApiServerErrorAlarm"):
+            props = resources[name]["Properties"]
+            self.assertEqual(props["AlarmActions"], [{"Ref": "LearningNotificationTopic"}])
+            self.assertEqual(props["TreatMissingData"], "notBreaching")
+        self.assertNotIn("Default", template["Parameters"]["NotificationEmail"])
+        self.assertTrue(template["Parameters"]["NotificationEmail"]["NoEcho"])
 
     def test_lambda_filename_handler_and_two_minute_limit_match(self):
         """Keep packaging, handler configuration, and the requested execution limit in agreement."""
@@ -193,6 +211,26 @@ class DeploymentSafetyTests(unittest.TestCase):
         self.assertEqual(template["Parameters"]["LambdaHandler"]["Default"], "lambda.lambda_handler")
         self.assertEqual(template["Parameters"]["LambdaTimeoutSeconds"]["Default"], 120)
         self.assertEqual(DEPLOY.BACKEND_SOURCE_FILES, ("lambda.py",))
+
+    def test_monitoring_verification_reports_email_confirmation_without_sending_messages(self):
+        """A pending subscription is deployable, but must never be reported as ready for email delivery."""
+        from unittest.mock import Mock
+        topic = "arn:aws:sns:us-east-1:123456789012:project-notifications"
+        outputs = dict(LearningNotificationTopicArn=topic, LearningLambdaFunctionName="E-learning")
+        outputs.update({key: key for key in DEPLOY.MONITORING_ALARM_OUTPUT_KEYS})
+        sns, cloudwatch, logs = Mock(), Mock(), Mock()
+        cloudwatch.describe_alarms.return_value = {"MetricAlarms": [
+            {"AlarmActions": [topic], "ActionsEnabled": True, "TreatMissingData": "notBreaching"}
+            for _ in DEPLOY.MONITORING_ALARM_OUTPUT_KEYS]}
+        logs.describe_metric_filters.return_value = {"metricFilters": [{"metricTransformations": [
+            {"metricName": "BedrockRequestAttempts"}, {"metricName": "QuestionNotificationFailures"}]}]}
+        for arn, expected in (("PendingConfirmation", False), (topic + ":subscription-id", True)):
+            sns.list_subscriptions_by_topic.return_value = {"Subscriptions": [
+                {"Protocol": "email", "Endpoint": "operator@example.com", "SubscriptionArn": arn}]}
+            with patch.object(DEPLOY, "NOTIFICATION_EMAIL", "operator@example.com"), patch.object(
+                    DEPLOY.boto3, "client", side_effect=[sns, cloudwatch, logs]):
+                self.assertEqual(DEPLOY.verify_monitoring(outputs), expected)
+        sns.publish.assert_not_called()
 
     def test_change_set_preserves_overrides_and_executes_without_serverless(self):
         from unittest.mock import Mock

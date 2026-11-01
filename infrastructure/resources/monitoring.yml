@@ -1,0 +1,204 @@
+# Configure names, the email recipient, and the alarm window here before using them below.
+Parameters:
+  # Match the ownership labels used in the other project templates.
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  # Monitor only the existing function and REST API.
+  LambdaFunctionName:
+    Type: String
+    Default: E-learning
+    AllowedPattern: '[a-zA-Z0-9_-]+'
+    MaxLength: 64
+  RestApiName:
+    Type: String
+    Default: e Learning
+  # SNS sends a confirmation email here; delivery begins after the owner confirms it.
+  NotificationEmail:
+    Type: String
+    NoEcho: true
+    Description: Recipient supplied by the GitHub Actions NOTIFICATION_EMAIL repository variable
+    AllowedPattern: '[^@\s]+@[^@\s]+\.[^@\s]+'
+  # Alert when at least one failure occurs in this time window.
+  AlarmPeriodSeconds:
+    Type: Number
+    Default: 60
+    AllowedValues: [60, 300]
+
+# The Lambda log group is declared in another fragment; full-stack lint resolves it.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E1010, E1020]
+
+# Use one email channel for question notifications and operational failure alarms.
+Resources:
+  # Lambda publishes the submitted question here; CloudWatch publishes failure alerts here.
+  LearningNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-notifications
+      Tags:
+        - Key: Project
+          Value:
+            Ref: ProjectName
+
+  # Subscribe the configured recipient without storing email credentials in the application.
+  LearningEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn:
+        Ref: LearningNotificationTopic
+      Protocol: email
+      Endpoint:
+        Ref: NotificationEmail
+
+  # Let only this account's project alarms publish to the notification topic.
+  # Lambda receives its own narrowly scoped sns:Publish permission in lambda.yml.
+  LearningNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - Ref: LearningNotificationTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sns:Publish
+            Resource:
+              Ref: LearningNotificationTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount:
+                  Ref: AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  Fn::Sub: arn:${AWS::Partition}:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:${ProjectName}-${DeploymentStage}-*
+
+  # Count valid questions at the Bedrock call boundary, without logging their text.
+  LearningBedrockRequestMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: LearningLambdaLogGroup
+      FilterPattern: '"BEDROCK_REQUEST_STARTED"'
+      MetricTransformations:
+        - MetricNamespace:
+            Fn::Sub: ${ProjectName}/${DeploymentStage}
+          MetricName: BedrockRequestAttempts
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+
+  # Count notification failures separately so answers can continue while operators are alerted.
+  LearningNotificationFailureMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName:
+        Ref: LearningLambdaLogGroup
+      FilterPattern: '"QUESTION_NOTIFICATION_FAILED"'
+      MetricTransformations:
+        - MetricNamespace:
+            Fn::Sub: ${ProjectName}/${DeploymentStage}
+          MetricName: QuestionNotificationFailures
+          MetricValue: '1'
+          DefaultValue: 0
+          Unit: Count
+
+  # Alert when Lambda cannot publish a question notification.
+  LearningNotificationFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: LearningNotificationTopicPolicy
+    Properties:
+      AlarmName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-notification-failures
+      AlarmDescription: A submitted question could not be published to SNS; inspect the Lambda logs
+      Namespace:
+        Fn::Sub: ${ProjectName}/${DeploymentStage}
+      MetricName: QuestionNotificationFailures
+      Statistic: Sum
+      Period:
+        Ref: AlarmPeriodSeconds
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Ref: LearningNotificationTopic
+
+  # Alert on unhandled errors and timeouts reported by the Lambda service.
+  LearningLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: LearningNotificationTopicPolicy
+    Properties:
+      AlarmName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-lambda-errors
+      AlarmDescription: E-learning Lambda reported an unhandled failure or timeout
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value:
+            Ref: LambdaFunctionName
+      Statistic: Sum
+      Period:
+        Ref: AlarmPeriodSeconds
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Ref: LearningNotificationTopic
+
+  # Capture HTTP 5xx failures, including errors the Python handler returns safely as JSON.
+  LearningApiServerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: LearningNotificationTopicPolicy
+    Properties:
+      AlarmName:
+        Fn::Sub: ${ProjectName}-${DeploymentStage}-api-server-errors
+      AlarmDescription: The learning API returned an HTTP 5xx response
+      Namespace: AWS/ApiGateway
+      MetricName: 5XXError
+      Dimensions:
+        - Name: ApiName
+          Value:
+            Ref: RestApiName
+        - Name: Stage
+          Value:
+            Ref: DeploymentStage
+      Statistic: Sum
+      Period:
+        Ref: AlarmPeriodSeconds
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - Ref: LearningNotificationTopic
+
+# Give CI/CD and operators stable identifiers for monitoring and email setup checks.
+Outputs:
+  LearningNotificationTopicArn:
+    Value:
+      Ref: LearningNotificationTopic
+  LearningMonitoringNamespace:
+    Value:
+      Fn::Sub: ${ProjectName}/${DeploymentStage}
+  LearningNotificationFailureAlarmName:
+    Value:
+      Ref: LearningNotificationFailureAlarm
+  LearningLambdaErrorAlarmName:
+    Value:
+      Ref: LearningLambdaErrorAlarm
+  LearningApiServerErrorAlarmName:
+    Value:
+      Ref: LearningApiServerErrorAlarm

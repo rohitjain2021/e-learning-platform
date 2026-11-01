@@ -35,6 +35,7 @@ Configure these in GitHub repository Settings > Secrets and variables > Actions:
 | Type | Name | Value |
 | --- | --- | --- |
 | Variable | AWS_DEPLOY_ROLE_ARN | DeploymentRoleArn output from the bootstrap stack. |
+| Variable | NOTIFICATION_EMAIL | Administrator email address that should receive submitted questions and failure alerts. |
 
 Do not put credentials in source files or chat. No long-lived AWS access keys or Serverless secrets are required for the CloudFormation pipeline. The optional Serverless tooling is retained for future backend work; invoking Framework v4 separately would require its own authentication. The deployment role retains project artifact-prefix permissions for that tooling.
 
@@ -84,3 +85,17 @@ The same GitHub Actions job creates the API and publishes the `dev` stage direct
 After deployment, the pipeline uses API Gateway's `test_invoke_method` with an empty prompt. It expects HTTP 400 and an error body, which checks both mappings and Lambda permissions without invoking a model. The stack output `LearningApiUrl` is the full POST URL for Streamlit's `API_URL` setting. This demo route currently accepts requests without sign-in or an API key.
 
 Send `Content-Type: application/json` with a body such as `{"prompt":"When should I submit my weekly hours?"}`. A successful request returns `answer`, `citations`, `results`, and `sources`. Documents must be synced before the response can cite them. The REST integration waits up to 29 seconds; Lambda retains its separate 120-second execution limit. A longer-running request can therefore return HTTP 504 at the gateway even while Lambda is still running.
+
+## Monitoring and notifications
+
+`resources/monitoring.yml` defines the SNS topic, email subscription, two log-to-metric filters, and three failure alarms. Its parameters are at the top of the same template. The recipient comes from the GitHub Actions repository variable `NOTIFICATION_EMAIL`, passed to CloudFormation's `NotificationEmail` parameter with `NoEcho`. The address is not hardcoded in the public repository or emitted in deployment artifacts.
+
+For every valid submitted question, Lambda records `BEDROCK_REQUEST_STARTED`, attempts one SNS publish containing the question, UTC timestamp, request ID, and knowledge-base ID, and then calls Bedrock. The notification describes a submitted attempt; it does not claim the model has answered successfully. Several internal model calls or streamed chunks do not produce additional notifications. Repeated submissions are separate requests; SNS Standard delivery can also produce duplicates, identifiable by request ID.
+
+CloudWatch exposes `BedrockRequestAttempts` in the `${ProjectName}/${DeploymentStage}` namespace. This counts this application's request attempts, not the number of internal model invocations. `QuestionNotificationFailures` counts publishing failures. Logs contain event markers and request IDs, without questions, answers, or document contents. The alarms email the same SNS topic when the API reports HTTP 5xx, Lambda reports an unhandled error/timeout, or notification publishing fails. Missing data is treated as healthy, so an unused app does not cause an alarm. Failure alarms notify on entering ALARM; per-question notifications are published directly so each request is covered.
+
+Apply the checked-in deployment-role changes through the approved bootstrap process, set `NOTIFICATION_EMAIL` in repository settings, then push to `main`. GitHub Actions runs tests, validates YAML, and creates the resources through CloudFormation. Its post-deployment checks validate alarm routing and metric filters, and report whether the email subscription is confirmed. They do not send test emails or invoke a paid model.
+
+Open the **AWS Notification - Subscription Confirmation** email at the configured address and choose **Confirm subscription**. Until confirmation, SNS can accept publishes but will not deliver question or alarm emails. After confirmation, submit a question through the app and check the inbox. The subject is `E-learning: new question`; the request ID connects the email to `/aws/lambda/E-learning` logs. A notification failure is logged and alarmed without preventing the answer. View the three alarms under CloudWatch > Alarms, or use the alarm names returned by the stack outputs.
+
+Monitoring adds CloudWatch custom-metric, alarm, and SNS usage charges under the applicable AWS pricing/free allowances. No scheduled test calls or recurring document syncs are introduced.

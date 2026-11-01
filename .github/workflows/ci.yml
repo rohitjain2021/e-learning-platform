@@ -32,6 +32,8 @@ env:
   AWS_REGION: us-east-1
   # Use the development environment; keep other environments separate.
   DEPLOYMENT_STAGE: dev
+  # Keep the recipient in repository settings instead of publishing the address in source code.
+  NOTIFICATION_EMAIL: ${{ vars.NOTIFICATION_EMAIL }}
 
 # Independent jobs separate code validation from privileged AWS deployment.
 jobs:
