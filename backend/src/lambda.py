@@ -141,6 +141,10 @@ def lambda_handler(event, context):
         return json_response(504, {"error": "The answer took too long. Please try again."})
     except ClientError as error:
         code = error.response.get("Error", {}).get("Code", "")
+        # Record AWS's error code; access-denial messages identify the missing IAM permission.
+        LOGGER.error("Bedrock request failed: %s", code)
+        if code == "AccessDeniedException":
+            LOGGER.error("AWS permission denial: %s", error.response["Error"].get("Message", ""))
         if code in ("ThrottlingException", "TooManyRequestsException"):
             return json_response(429, {"error": "The assistant is busy. Please try again shortly."})
         return json_response(503, {"error": "The assistant is temporarily unavailable."})
