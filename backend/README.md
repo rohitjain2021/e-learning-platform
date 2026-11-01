@@ -25,4 +25,6 @@ The inputs live at the top of `infrastructure/resources/lambda.yml`, including t
 
 Install `backend/requirements.txt`, then run `python -m unittest discover -s tests -v` from this directory. Tests mock AWS clients. CI also runs them on Python 3.14 and packages `lambda.py` with the pinned AWS SDK.
 
-The function must be deployed through GitHub Actions and CloudFormation. The scoped Lambda permissions in the bootstrap template must be applied through the approved process before the first deployment. Documents must be synchronized before querying them. API Gateway and Streamlit endpoint setup remain separate work. Set Streamlit's `API_TIMEOUT_SECONDS` appropriately for agentic requests; its current default is 30 seconds and maximum is 120 seconds.
+The function must be deployed through GitHub Actions and CloudFormation. The scoped deployment permissions in the bootstrap template must be applied through the approved process. Documents must be synchronized before querying them.
+
+The regional REST API `e Learning` exposes `POST /e-learning` on the `dev` stage. Send `Content-Type: application/json` and `{"prompt":"When should I submit my weekly hours?"}`. Its custom request mapping passes that prompt directly to this handler; its response mapping unwraps `body` and preserves `statusCode`. Set Streamlit's `API_URL` to the CloudFormation output `LearningApiUrl`. The gateway's integration timeout is 29 seconds, separate from Lambda's 120-second limit; the frontend's current 30-second timeout covers that gateway wait.

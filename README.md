@@ -153,7 +153,7 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests ta
 
 This checks dependency installation, frontend behavior with mocked responses, infrastructure YAML, and deployment safety. A deployment job runs only for trusted `main`-branch pushes or manual workflow runs after these checks pass.
 
-The deployment job uses GitHub OIDC, merges and validates the native YAML template, checks and executes a CloudFormation change set, and verifies the resulting knowledge base. It rejects resource removals and possible replacements. Its readable YAML template and deployment summary are saved as workflow artifacts. The one-time deployment role is provisioned separately; the pipeline needs its ARN but no Serverless credential. Streamlit hosting is managed separately.
+The deployment job uses GitHub OIDC, merges and validates the native YAML template, checks and executes a CloudFormation change set, and verifies the knowledge base, Lambda, and REST API mapping. It rejects destructive removals and possible replacements; old API deployment snapshots are retained when publishing changes. Its readable YAML template and deployment summary are saved as workflow artifacts. The one-time deployment role is provisioned separately; the pipeline needs its ARN but no Serverless credential. Streamlit hosting is managed separately.
 
 ## What about keys and credentials?
 
@@ -164,3 +164,7 @@ Lambda should use an IAM execution role with the permissions it needs. AWS secre
 ## E-learning Lambda
 
 The backend implements the reference function's agentic retrieval flow on Python 3.14. It reads a question, uses Nova Pro through `agentic_retrieve_stream`, and returns the generated answer, citations, and retrieved results. It also formats source links for the Streamlit interface. CI/CD packages the source and pinned AWS SDK, while a separate health request verifies deployment without calling the model. The deployment-role update, document synchronization, and API connection steps are described in the [backend guide](backend/README.md).
+
+## REST API
+
+The API is named **e Learning** and accepts **POST /e-learning** with a JSON question: `{"prompt":"When should I submit my weekly hours?"}`. API Gateway passes the prompt to the existing Lambda and returns its answer and supporting sources. GitHub Actions creates and deploys the API through CloudFormation, then tests that an empty question returns HTTP 400. Use the stack output `LearningApiUrl` as Streamlit's `API_URL`. The demo endpoint currently accepts requests without sign-in; its integration timeout is 29 seconds.

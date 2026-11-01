@@ -175,7 +175,7 @@ Resources:
           Value:
             Ref: ProjectName
 
-  # Run the Python code uploaded by CI/CD, without API Gateway or a public function URL.
+  # Run the Python code uploaded by CI/CD; the API template connects its POST route here.
   LearningLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:

@@ -18,7 +18,9 @@ import yaml
 # Global paths: keep generated files separate from the YAML people edit.
 INFRASTRUCTURE_DIRECTORY = Path(__file__).resolve().parents[1]
 ARTIFACT_DIRECTORY = INFRASTRUCTURE_DIRECTORY / ".serverless"
-RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml", "lambda.yml")
+RESOURCE_FILES = ("knowledge-base-storage.yml", "knowledge-base.yml", "knowledge-base-logging.yml", "lambda.yml", "api-gateway.yml")
+# API Gateway snapshots are immutable; a changed API definition needs a new deployment ID.
+API_DEPLOYMENT_PREFIX = "LearningApiDeployment"
 # Package only reviewed backend source files; tests, secrets, and local environments stay out.
 BACKEND_SOURCE_DIRECTORY = INFRASTRUCTURE_DIRECTORY.parent / "backend" / "src"
 BACKEND_SOURCE_FILES = ("lambda.py",)
@@ -72,7 +74,7 @@ def stack_outputs(client, stack_name):
 def build_template():
     """Merge native YAML sections without resolving CloudFormation intrinsics locally."""
     template = {"AWSTemplateFormatVersion": "2010-09-09",
-                "Description": "E-learning knowledge base, document storage, and application logging"}
+                "Description": "E-learning knowledge base, Lambda, REST API, storage, and logging"}
     for path in [INFRASTRUCTURE_DIRECTORY / "resources" / p for p in RESOURCE_FILES]:
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         # Fragment editor exceptions must never suppress checks on the full template.
@@ -88,14 +90,26 @@ def build_template():
             if conflicts:
                 raise ValueError(f"Conflicting or duplicate {section} definitions: {sorted(conflicts)}")
             destination.update(entries)
+        if path.name == "api-gateway.yml":
+            # Change only the snapshot's name; the API, resource, and stage keep their identities.
+            digest = hashlib.sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()[:12]
+            deployment_id = API_DEPLOYMENT_PREFIX + digest
+            resources = template["Resources"]
+            resources[deployment_id] = resources.pop(API_DEPLOYMENT_PREFIX)
+            resources["LearningApiStage"]["Properties"]["DeploymentId"] = {"Ref": deployment_id}
     return template
 
 
 def validate_changes(changes):
-    """Prevent automatic removal or possible replacement of existing resources."""
+    """Block destructive changes; allow old API snapshots to leave the stack only if retained."""
     for change in changes:
         resource = change["ResourceChange"]
         print(resource["Action"], resource["LogicalResourceId"], resource["ResourceType"])
+        # Old immutable snapshots stay in AWS; only the stage switches to a new snapshot.
+        if (resource["Action"] == "Remove" and resource.get("PolicyAction") == "Retain"
+                and resource["ResourceType"] == "AWS::ApiGateway::Deployment"
+                and resource["LogicalResourceId"].startswith(API_DEPLOYMENT_PREFIX)):
+            continue
         if resource["Action"] == "Remove" or resource.get("Replacement", "False") != "False":
             raise RuntimeError("Resource removal or replacement needs a separately reviewed migration.")
 
@@ -239,6 +253,14 @@ def verify(outputs):
         raise RuntimeError("Lambda readiness invocation failed.")
     if json.loads(result["body"]).get("status") != "ready":
         raise RuntimeError("Lambda did not return its readiness response.")
+    # Exercise the actual request/response mappings without paying for a model invocation.
+    gateway = boto3.client("apigateway", region_name=REGION)
+    test = gateway.test_invoke_method(
+        restApiId=outputs["LearningRestApiId"], resourceId=outputs["LearningApiResourceId"],
+        httpMethod="POST", headers={"Content-Type": "application/json"}, body='{"prompt":""}')
+    if test["status"] != 400 or "error" not in json.loads(test["body"]):
+        raise RuntimeError("API Gateway did not preserve Lambda's invalid-prompt response.")
+    print("Verified POST /e-learning mapping: empty prompt returned HTTP 400.")
     # Save readable deployment evidence for the workflow artifact, without credentials.
     summary = dict(outputs, KnowledgeBaseStatus=kb["status"], DataSourceStatus=source["status"], LambdaState=configuration["State"])
     (ARTIFACT_DIRECTORY / "deployment-summary.yml").write_text(

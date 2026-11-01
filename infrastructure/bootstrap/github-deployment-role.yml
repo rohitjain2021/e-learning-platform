@@ -41,6 +41,10 @@ Parameters:
     Default: E-learning
     AllowedPattern: '[a-zA-Z0-9_-]+'
     MaxLength: 64
+  # Allow creation only under the display name requested for this project's REST API.
+  RestApiName:
+    Type: String
+    Default: e Learning
 
 # Create only the deployment role; application resources belong to the main pipeline-managed stack.
 Resources:
@@ -208,8 +212,39 @@ Resources:
                   - lambda:TagResource
                   - lambda:UntagResource
                   - lambda:InvokeFunction
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:GetPolicy
                 Resource:
                   Fn::Sub: arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunctionName}
+              # API IDs do not exist yet; require the exact name and project tags at creation.
+              - Sid: CreateNamedProjectRestApi
+                Effect: Allow
+                Action: apigateway:POST
+                Resource:
+                  Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis
+                Condition:
+                  StringEquals:
+                    apigateway:Request/ApiName:
+                      Ref: RestApiName
+                    aws:RequestTag/Project:
+                      Ref: ProjectName
+                    aws:RequestTag/Stage:
+                      Ref: DeploymentStage
+              # Child resources inherit the REST API's tags for IAM access checks.
+              # This covers its route, method, mappings, validator, snapshots, stage, and test calls.
+              - Sid: ManageTaggedProjectRestApi
+                Effect: Allow
+                Action: [apigateway:GET, apigateway:POST, apigateway:PUT, apigateway:PATCH, apigateway:DELETE]
+                Resource:
+                  - Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}::/restapis/*
+                  - Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}::/tags/*
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/Project:
+                      Ref: ProjectName
+                    aws:ResourceTag/Stage:
+                      Ref: DeploymentStage
               # Precreate and configure only this function's retained log group.
               - Sid: ConfigureLearningLambdaLogs
                 Effect: Allow

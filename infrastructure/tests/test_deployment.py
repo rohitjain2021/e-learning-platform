@@ -105,6 +105,35 @@ class DeploymentSafetyTests(unittest.TestCase):
                 DEPLOY.validate_changes([{"ResourceChange": {
                     "LogicalResourceId": "KnowledgeBaseBucket", "ResourceType": "AWS::S3::Bucket", **details}}])
 
+    def test_api_snapshot_rotation_keeps_old_snapshots_and_blocks_deletion(self):
+        """Updating a route can publish a snapshot without authorizing resource destruction."""
+        change = {"Action": "Remove", "LogicalResourceId": "LearningApiDeployment123abc",
+                  "ResourceType": "AWS::ApiGateway::Deployment", "PolicyAction": "Retain"}
+        DEPLOY.validate_changes([{"ResourceChange": change}])
+        with self.assertRaises(RuntimeError):
+            DEPLOY.validate_changes([{"ResourceChange": dict(change, PolicyAction="Delete")}])
+
+    def test_api_changes_publish_a_new_snapshot_without_changing_the_api_or_stage(self):
+        """A changed mapping must reach the deployed URL, not just the API editor."""
+        import shutil
+        import yaml
+        before = DEPLOY.build_template()
+        original = before["Resources"]["LearningApiStage"]["Properties"]["DeploymentId"]
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(DEPLOY.INFRASTRUCTURE_DIRECTORY / "resources", root / "resources")
+            path = root / "resources" / "api-gateway.yml"
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            document["Resources"]["LearningPostMethod"]["Properties"]["Integration"]["RequestTemplates"]["application/json"] += '\n'
+            path.write_text(yaml.safe_dump(document), encoding="utf-8")
+            with patch.object(DEPLOY, "INFRASTRUCTURE_DIRECTORY", root):
+                after = DEPLOY.build_template()
+        self.assertNotEqual(original, after["Resources"]["LearningApiStage"]["Properties"]["DeploymentId"])
+        self.assertEqual(before["Resources"]["LearningRestApi"], after["Resources"]["LearningRestApi"])
+        deployment = after["Resources"][after["Resources"]["LearningApiStage"]["Properties"]["DeploymentId"]["Ref"]]
+        self.assertIn("LearningPostMethod", deployment["DependsOn"])
+        self.assertEqual(deployment["DeletionPolicy"], "Retain")
+
     def test_native_deployment_is_also_blocked_locally(self):
         from unittest.mock import Mock
         client = Mock()

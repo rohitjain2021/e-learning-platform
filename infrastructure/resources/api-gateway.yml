@@ -1,0 +1,186 @@
+# Settings for this API live here; the resources below refer back to these values.
+Parameters:
+  # Match the project labels used by the other infrastructure templates.
+  ProjectName:
+    Type: String
+    Default: e-learning-platform
+    AllowedPattern: '[a-z0-9-]+'
+  DeploymentStage:
+    Type: String
+    Default: dev
+    AllowedPattern: '[a-z0-9-]+'
+  # This is the display name in API Gateway, not the URL path.
+  RestApiName:
+    Type: String
+    Default: e Learning
+  # Requests go to POST /e-learning under the deployment stage.
+  ApiResourcePath:
+    Type: String
+    Default: e-learning
+    AllowedPattern: '[a-z0-9-]+'
+  # Keep the standard REST integration timeout; Lambda retains its 120-second limit.
+  ApiIntegrationTimeoutMilliseconds:
+    Type: Number
+    Default: 29000
+    MinValue: 50
+    MaxValue: 29000
+
+# Lambda is defined in another fragment; the complete stack validates this reference.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [E1010, E1020]
+
+# Create the REST endpoint, connect it to Lambda, and publish it to a stage.
+Resources:
+  # A regional REST API receives JSON questions over HTTPS.
+  LearningRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name:
+        Ref: RestApiName
+      Description: Send learning questions to the E-learning Lambda
+      EndpointConfiguration:
+        Types: [REGIONAL]
+      Tags:
+        - Key: Project
+          Value:
+            Ref: ProjectName
+        - Key: Stage
+          Value:
+            Ref: DeploymentStage
+
+  # Add the requested /e-learning path beneath the API root.
+  LearningApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Ref: LearningRestApi
+      ParentId:
+        Fn::GetAtt: [LearningRestApi, RootResourceId]
+      PathPart:
+        Ref: ApiResourcePath
+
+  # Reject missing or non-text prompts before they reach Lambda.
+  LearningPromptModel:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      RestApiId:
+        Ref: LearningRestApi
+      Name: LearningPrompt
+      ContentType: application/json
+      Schema:
+        '$schema': http://json-schema.org/draft-04/schema#
+        type: object
+        required: [prompt]
+        properties:
+          prompt:
+            type: string
+            maxLength: 2000
+
+  # Tell API Gateway to check JSON against the prompt model.
+  LearningRequestValidator:
+    Type: AWS::ApiGateway::RequestValidator
+    Properties:
+      RestApiId:
+        Ref: LearningRestApi
+      ValidateRequestBody: true
+      ValidateRequestParameters: false
+
+  # Only this API's POST /e-learning route can invoke the project Lambda.
+  # The stage wildcard also allows API Gateway's built-in test-invoke-stage.
+  LearningApiLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Ref: LearningLambdaFunction
+      Principal: apigateway.amazonaws.com
+      SourceAccount:
+        Ref: AWS::AccountId
+      SourceArn:
+        Fn::Sub: arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${LearningRestApi}/*/POST/${ApiResourcePath}
+
+  # Use a custom Lambda integration so the request and response mappings are visible.
+  LearningPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Ref: LearningRestApi
+      ResourceId:
+        Ref: LearningApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      RequestValidatorId:
+        Ref: LearningRequestValidator
+      RequestModels:
+        application/json:
+          Ref: LearningPromptModel
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri:
+          Fn::Sub: arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LearningLambdaFunction.Arn}/invocations
+        TimeoutInMillis:
+          Ref: ApiIntegrationTimeoutMilliseconds
+        PassthroughBehavior: NEVER
+        # $input.json keeps quotes and line breaks valid without hand-written escaping.
+        RequestTemplates:
+          application/json: |
+            {"prompt": $input.json('$.prompt')}
+        IntegrationResponses:
+          # Lambda returns {statusCode, body}; send the body as JSON and preserve its status.
+          - StatusCode: '200'
+            ResponseTemplates:
+              application/json: |
+                #set($response = $input.path('$'))
+                #set($context.responseOverride.status = $response.statusCode)
+                $response.body
+          # An unhandled Lambda error becomes a clear server error instead of HTTP 200.
+          - StatusCode: '502'
+            SelectionPattern: '(?s).+'
+            ResponseTemplates:
+              application/json: '{"error":"The assistant could not finish the answer."}'
+      # These are the response codes the backend can return to the caller.
+      MethodResponses:
+        - StatusCode: '200'
+        - StatusCode: '400'
+        - StatusCode: '429'
+        - StatusCode: '502'
+        - StatusCode: '503'
+        - StatusCode: '504'
+
+  # Publish only after the method and invoke permission exist.
+  # The build adds a content hash to this logical ID when API settings change.
+  # Retain old snapshots so a stage update never deletes its previous deployment.
+  LearningApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: [LearningPostMethod, LearningApiLambdaPermission]
+    Properties:
+      RestApiId:
+        Ref: LearningRestApi
+
+  # Keep a stable stage URL while CloudFormation publishes new API snapshots.
+  LearningApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId:
+        Ref: LearningRestApi
+      DeploymentId:
+        Ref: LearningApiDeployment
+      StageName:
+        Ref: DeploymentStage
+
+# Give the pipeline and Streamlit setup the API identifiers and complete POST URL.
+Outputs:
+  LearningRestApiId:
+    Value:
+      Ref: LearningRestApi
+  LearningApiResourceId:
+    Value:
+      Ref: LearningApiResource
+  LearningApiUrl:
+    Value:
+      Fn::Sub: https://${LearningRestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${DeploymentStage}/${ApiResourcePath}

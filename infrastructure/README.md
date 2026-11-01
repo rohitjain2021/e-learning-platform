@@ -19,8 +19,8 @@ Generated state may use JSON under .serverless/; it is ignored by Git. The pipel
 2. GitHub Actions installs dependencies, runs frontend and infrastructure safety tests, and validates YAML.
 3. After checks pass, the deployment job assumes the project role with GitHub OIDC.
 4. The runner combines the native resource templates and their top-level parameters and validates the CloudFormation template.
-5. The runner creates a CloudFormation change set, rejects removals or possible replacements, and executes it. No Serverless account or license is needed by this deployment path.
-6. The job verifies the knowledge base, data source, and exact-resource service-role trust, then uploads a YAML template and deployment summary as artifacts.
+5. The runner creates a CloudFormation change set, rejects destructive removals or possible replacements, and executes it. Old API deployment snapshots may leave the stack only with a Retain policy. No Serverless account or license is needed by this deployment path.
+6. The job verifies the knowledge base, data source, Lambda, and API mapping, then uploads a YAML template and deployment summary as artifacts.
 
 Pull requests receive checks but cannot assume the deployment role. Concurrent deployments are serialized. Missing settings fail clearly; the job never falls back to local credentials or local deployment.
 
@@ -73,4 +73,14 @@ The separate bootstrap stack declares its own inputs at the top because it must 
 
 The pipeline stages pinned backend dependencies for Python 3.14 on Linux, packages source plus the SDK, and uploads the encrypted ZIP under the existing project artifact prefix. A content-based key changes only when the package contents change. Unit tests simulate retrieval; the post-deployment `{"action":"health"}` check avoids paid model calls.
 
-The bootstrap deployment-role template includes scoped permissions for the function, its execution role, and its log group. Apply those permissions through the approved bootstrap process before enabling the first Lambda deployment. The application role cannot expand its own access. No API Gateway or public function URL is provisioned in this change. See the [backend guide](../backend/README.md) for the reference-function coverage, configuration, source-link limits, and document-sync prerequisite.
+The bootstrap deployment-role template includes scoped permissions for the function, its execution role, and its log group. Apply those permissions through the approved bootstrap process before enabling the first Lambda deployment. The application role cannot expand its own access. See the [backend guide](../backend/README.md) for the reference-function coverage, configuration, source-link limits, and document-sync prerequisite.
+
+## REST API
+
+`resources/api-gateway.yml` defines the regional REST API named `e Learning`, its `/e-learning` resource, and the `POST` method. Its settings are at the top of that template. The API uses a custom Lambda integration with the existing `E-learning` function. The `application/json` request mapping sends only the `prompt` field to Lambda; the response mapping returns Lambda's JSON body and its actual HTTP status code. Invalid JSON or a missing/non-text prompt is rejected by the request model. An empty prompt reaches Lambda and returns HTTP 400.
+
+The same GitHub Actions job creates the API and publishes the `dev` stage through CloudFormation. The build derives a deployment snapshot ID from the API definition so mapping changes are published automatically. The API and stage keep stable IDs; previous snapshots are retained. The deployment-role bootstrap adds REST API creation restricted by name and project/stage tags, management restricted by inherited project/stage tags, and invoke-policy management for the existing Lambda only.
+
+After deployment, the pipeline uses API Gateway's `test_invoke_method` with an empty prompt. It expects HTTP 400 and an error body, which checks both mappings and Lambda permissions without invoking a model. The stack output `LearningApiUrl` is the full POST URL for Streamlit's `API_URL` setting. This demo route currently accepts requests without sign-in or an API key.
+
+Send `Content-Type: application/json` with a body such as `{"prompt":"When should I submit my weekly hours?"}`. A successful request returns `answer`, `citations`, `results`, and `sources`. Documents must be synced before the response can cite them. The REST integration waits up to 29 seconds; Lambda retains its separate 120-second execution limit. A longer-running request can therefore return HTTP 504 at the gateway even while Lambda is still running.
