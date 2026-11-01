@@ -9,7 +9,7 @@ The code follows the original `RAG_eLearning_App_v1.0/RAG_eLearning_App/lambda_f
 1. Define the settings at the top of the file.
 2. Create the Bedrock and S3 connections once.
 3. Read the user's `prompt` and check that it is valid.
-4. Call `agentic_retrieve_stream` using Nova Pro and our knowledge base.
+4. Call `agentic_retrieve_stream` using Nova Pro and our knowledge base. Each search requests two relevant passages by default, keeping small queries focused. Configure this with `MaxRetrievalResults` at the top of the Lambda template.
 5. Wait for the final answer, citations, and retrieved passages.
 6. Return those values as JSON, together with links only to the documents cited in the answer. Multiple cited chunks from one document produce one link; uncited search results are not shown as supporting sources.
 

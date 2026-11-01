@@ -20,6 +20,8 @@ SOURCE_BUCKET = os.environ.get("SOURCE_BUCKET", "")
 SOURCE_PREFIX = os.environ.get("SOURCE_PREFIX", "demo/learning/")
 MAX_QUESTION_LENGTH = 2000
 MAX_AGENT_ITERATIONS = int(os.environ.get("MAX_AGENT_ITERATIONS", "3"))
+# Keep each search focused instead of supplying the whole small demo library.
+MAX_RETRIEVAL_RESULTS = int(os.environ.get("MAX_RETRIEVAL_RESULTS", "2"))
 SOURCE_LINK_EXPIRY_SECONDS = int(os.environ.get("SOURCE_LINK_EXPIRY_SECONDS", "300"))
 READ_TIMEOUT_SECONDS = 110  # Leave time to return an error before Lambda's 120-second limit.
 DEADLINE_MARGIN_MILLISECONDS = 5000
@@ -118,7 +120,9 @@ def lambda_handler(event, context):
                 "maxAgentIteration": MAX_AGENT_ITERATIONS},
             generateResponse=True,
             messages=[{"role": "user", "content": {"text": query}}],
-            retrievers=[{"configuration": {"knowledgeBase": {"knowledgeBaseId": KNOWLEDGE_BASE_ID}}}],
+            retrievers=[{"configuration": {"knowledgeBase": {
+                "knowledgeBaseId": KNOWLEDGE_BASE_ID,
+                "retrievalOverrides": {"maxNumberOfResults": MAX_RETRIEVAL_RESULTS}}}}],
         )
 
         # 5. Ignore partial text; wait for the final answer, citations, and retrieved passages.

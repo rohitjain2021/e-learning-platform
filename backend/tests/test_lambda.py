@@ -80,6 +80,8 @@ class LambdaRetrievalTests(unittest.TestCase):
         validate_parameters(request, shape)
         self.assertEqual(request["messages"][0]["content"]["text"], "When should I submit hours?")
         self.assertEqual(request["retrievers"][0]["configuration"]["knowledgeBase"]["knowledgeBaseId"], "EXAMPLE1234")
+        self.assertEqual(request["retrievers"][0]["configuration"]["knowledgeBase"]["retrievalOverrides"],
+                         {"maxNumberOfResults": APP.MAX_RETRIEVAL_RESULTS})
         self.assertTrue(request["generateResponse"])
         config = request["agenticRetrieveConfiguration"]
         self.assertEqual(config["foundationModelType"], "CUSTOM")

@@ -63,6 +63,12 @@ Parameters:
     Default: 3
     MinValue: 1
     MaxValue: 10
+  # Retrieve two relevant passages per search so small queries do not include the whole library.
+  MaxRetrievalResults:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 100
   # Document links grant temporary access only to this project's source folder.
   SourceLinkExpirySeconds:
     Type: Number
@@ -205,6 +211,8 @@ Resources:
             Ref: KnowledgeBaseSourcePrefix
           MAX_AGENT_ITERATIONS:
             Fn::Sub: ${MaxAgentIterations}
+          MAX_RETRIEVAL_RESULTS:
+            Fn::Sub: ${MaxRetrievalResults}
           SOURCE_LINK_EXPIRY_SECONDS:
             Fn::Sub: ${SourceLinkExpirySeconds}
       Code:
