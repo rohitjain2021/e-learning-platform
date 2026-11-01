@@ -18,14 +18,14 @@
 .hero h1 { font: 500 clamp(2rem, 3vw, 3rem)/1.12 Georgia, serif; color: #173c2e; letter-spacing: -.045em; margin: 0 0 .9rem; padding: 0; }
 .hero p { color: #56675b; font-size: 1rem; line-height: 1.6; margin: 0; max-width: 620px; }
 .hero-art { position: absolute; right: -5px; bottom: 12px; width: 122px; }
-[data-testid="stForm"], .st-key-answer_card, .st-key-empty_answer, .st-key-document_panel, .st-key-question_suggestions {
+.st-key-question_form, .st-key-answer_card, .st-key-empty_answer, .st-key-document_panel, .st-key-question_suggestions {
   background: #fffefa; border: 1px solid var(--border); border-radius: 13px; padding: 1.4rem; box-shadow: 0 3px 12px #293c2610;
 }
-[data-testid="stForm"] { margin-bottom: .65rem; }
+.st-key-question_form { margin-bottom: .65rem; }
 .composer-title { font-weight: 650; font-size: 1.15rem; color: #173c2e; margin-bottom: .7rem; }
 [data-testid="stTextArea"] textarea { border-radius: 9px; font-family: inherit; line-height: 1.6; background: #fffffc; }
 [data-testid="stTextArea"] textarea:focus { border-color: #718e71; box-shadow: 0 0 0 2px #edf1e6; }
-[data-testid="stFormSubmitButton"] button { border-radius: 9px; min-height: 44px; font-weight: 600; }
+.st-key-question_form button { border-radius: 9px; min-height: 44px; font-weight: 600; }
 [data-testid="stBaseButton-primary"]:disabled { opacity: .6; }
 .composer-hint { color: #71806f; font-size: .75rem; padding-top: .7rem; }
 .answer-heading, .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: .7rem; }

@@ -17,6 +17,7 @@ QUESTION_PLACEHOLDER = "What would you like to understand?"
 RESULT_KEY = "assistant_result"
 QUESTION_KEY = "answered_question"
 INPUT_KEY = "question_input"
+SUBMIT_KEY = "find_answer"
 ERROR_KEY = "assistant_error"
 NAVIGATION_OPTIONS = ("Ask", "Documents")
 
@@ -139,8 +140,9 @@ def main():
                 f'<div class="hero-art">{book}</div></div>')
         if not settings.api_url:
             st.info("The assistant is being set up. You can explore the documents while we get connected.")
-        # Submit only when the learner chooses Find answer, avoiding a request for every keystroke.
-        with st.form("question_form"):
+        # Keep suggestions and typed text in the same live input state.
+        # Call the API only when Find answer is clicked.
+        with st.container(key="question_form"):
             st.html('<div class="composer-title">Ask your learning assistant</div>')
             question = st.text_area("Your question", placeholder=QUESTION_PLACEHOLDER,
                                     key=INPUT_KEY, max_chars=MAX_QUESTION_LENGTH,
@@ -149,7 +151,7 @@ def main():
             with hint:
                 st.html('<div class="composer-hint">Search across your learning documents</div>')
             with action:
-                submitted = st.form_submit_button("Find answer ↗", type="primary",
+                submitted = st.button("Find answer ↗", key=SUBMIT_KEY, type="primary",
                                                   width="stretch", disabled=not settings.api_url)
         # Clear the previous result and show progress, so a failed question never leaves an old answer visible.
         if submitted:

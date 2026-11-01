@@ -151,6 +151,18 @@ class StreamlitPageTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("PROGRAM FACTS" in item.value for item in app.text))
 
+    def test_suggested_question_can_be_submitted_without_typing_again(self):
+        """The question visible after choosing a suggestion must be the one sent to the API."""
+        app = AppTest.from_file(APP_PATH).run()
+        app.button(key="suggestion_1").click().run()
+        self.assertEqual(app.text_area[0].value, "When should I submit my weekly hours?")
+        self.assertFalse(app.button(key="find_answer").disabled)
+        with patch("api_client.requests.post", return_value=response({"answer": TEST_ANSWER})) as post:
+            app.button(key="find_answer").click().run()
+        self.assertFalse(app.exception)
+        self.assertFalse(app.error)
+        self.assertEqual(post.call_args.kwargs["json"], {"prompt": "When should I submit my weekly hours?"})
+
 
 if __name__ == "__main__":
     unittest.main()
