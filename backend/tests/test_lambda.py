@@ -165,13 +165,35 @@ class LambdaRetrievalTests(unittest.TestCase):
                 "s3://e-learning-platform-knowledge-base/private/secret.txt",
                 "s3://e-learning-platform-knowledge-base/demo/learning/../private.txt"]
         results = [{"metadata": {"x-amz-bedrock-kb-source-uri": uri}} for uri in uris]
-        sources = APP.source_links(results)
+        sources = APP.source_links(results, [{"references": [{"resultIndex": i} for i in range(len(results))]}])
         self.assertEqual(len(sources), 4)
         self.signer.generate_presigned_url.assert_called_once_with(
             "get_object", Params={"Bucket": "e-learning-platform-knowledge-base", "Key": "demo/learning/program.txt"},
             ExpiresIn=APP.SOURCE_LINK_EXPIRY_SECONDS)
         self.assertTrue(sources[0]["url"].startswith("https://"))
         self.assertTrue(all(not source["url"] for source in sources[1:]))
+
+    def test_only_cited_documents_are_linked_and_duplicate_chunks_share_one_link(self):
+        """Searching several documents must not present all of them as answer evidence."""
+        cited_uri = TEST_URI.replace("program.txt", "hours.txt")
+        results = [{"metadata": {"_document_id": uri}}
+                   for uri in [TEST_URI, cited_uri, cited_uri, TEST_URI.replace("program.txt", "evidence.txt")]]
+        citations = [{"references": [{"resultIndex": 1}, {"resultIndex": 2}, {"resultIndex": 1}]}]
+        self.response_stream(results=results, generatedResponse={"answer": TEST_ANSWER, "citations": citations})
+        body = json.loads(APP.lambda_handler({"prompt": "When are hours due?"}, None)["body"])
+        self.assertEqual([s["uri"] for s in body["sources"]], [cited_uri])
+        self.assertEqual(body["results"], results)
+        self.assertEqual(body["citations"], citations)
+        self.assertEqual(self.signer.generate_presigned_url.call_count, 1)
+
+    def test_missing_or_invalid_citations_never_link_uncited_search_results(self):
+        """Missing evidence must not fall back to every retrieved document."""
+        results = [{"metadata": {"_document_id": TEST_URI}}]
+        for citations in ([], [{"references": [{}, {"resultIndex": -1}, {"resultIndex": 99},
+                                               {"resultIndex": "0"}, {"resultIndex": True}]}]):
+            with self.subTest(citations=citations):
+                self.assertEqual(APP.source_links(results, citations), [])
+        self.signer.generate_presigned_url.assert_not_called()
 
     def test_request_and_document_contents_are_not_logged(self):
         """Log useful counts without writing questions, answers, or document text to CloudWatch."""

@@ -26,12 +26,12 @@ Copy-Item .streamlit/secrets.toml.example .streamlit/secrets.toml
 Set these values in the local secrets file, or in your hosting service's secrets settings:
 
 ```toml
-API_URL = "https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/ask"
+API_URL = "https://ek0pkuy1wd.execute-api.us-east-1.amazonaws.com/dev/e-learning"
 API_TIMEOUT_SECONDS = 30
 API_BEARER_TOKEN = ""
 ```
 
-Replace the example URL with the full deployed question endpoint, including any stage prefix and route. This example is not an existing endpoint. The S3 bucket has been deployed; the question-answering API still needs to be connected before the frontend can return answers.
+This is the project's deployed question endpoint. If the API is recreated, use the new CloudFormation output `LearningApiUrl`, including its stage and resource path. Local environment variables are not copied to Streamlit Community Cloud: configure `API_URL` in the hosted app's Settings > Secrets as well. Without it, Find answer stays disabled even after selecting a suggested question.
 
 Environment variables with the same names take precedence over the secrets file. Global application defaults and validation are in `streamlit-ui/app_config.py`. The timeout setting accepts 1 through 120 seconds. HTTP is allowed only on localhost for local backend development; hosted endpoints use HTTPS.
 
@@ -76,9 +76,9 @@ After committing and pushing the frontend:
 2. Select repository `rohitjain2021/e-learning-platform` and branch `main`.
 3. Set the main file path to `streamlit-ui/streamlit_app.py` and Python to 3.12 in the deployment settings.
 4. Paste the connection settings into the app's Secrets settings. The requirements file alongside the entry point supplies the frontend packages.
-5. Deploy the app. Once the backend exists, set `API_URL` and test a question and its source link.
+5. Save the hosted secrets, allow the app to restart, and test a question and its source link. Find answer becomes enabled when `API_URL` is configured.
 
-Streamlit hosts the frontend; Serverless Framework deploys the AWS backend resources. The GitHub Actions workflow installs dependencies and runs API-client and Streamlit page tests using mocked HTTP. It neither provisions Streamlit hosting nor deploys AWS resources. Community Cloud manages its own updates from the connected branch; protect that branch with required checks if successful CI must be a prerequisite for release.
+Streamlit hosts the frontend. GitHub Actions checks the application and deploys AWS resources through CloudFormation; it does not provision Streamlit hosting or its connection settings. Community Cloud manages its own code updates from the connected branch. Supporting links come only from documents cited in the generated answer, with duplicate chunks grouped into one document link.
 
 Official references: [secrets management](https://docs.streamlit.io/develop/concepts/connections/secrets-management), [Community Cloud deployment](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app).
 

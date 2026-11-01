@@ -40,11 +40,20 @@ def json_response(status_code, body):
             "body": json.dumps(body, default=str)}
 
 
-def source_links(results):
-    """Create short-lived links only for documents in this project's S3 folder."""
+def source_links(results, citations):
+    """Link only the documents Bedrock cites as evidence for this answer."""
     sources = []
     seen = set()
-    for result in results:
+    # A citation points to result indexes, not directly to document URLs.
+    cited_indexes = set()
+    for citation in citations:
+        for reference in citation.get("references", []):
+            index = reference.get("resultIndex")
+            if type(index) is int and 0 <= index < len(results):
+                cited_indexes.add(index)
+    for index, result in enumerate(results):
+        if index not in cited_indexes:
+            continue
         metadata = result.get("metadata", {})
         # Managed knowledge bases put the S3 URI in _document_id.
         # Keep the older metadata key working for the reference response format too.
@@ -137,7 +146,7 @@ def lambda_handler(event, context):
             # 6. Return the reference response fields, plus source links for our Streamlit page.
             LOGGER.info("Answer completed: %d passages, %d citations", len(results), len(citations))
             return json_response(200, {"answer": answer, "citations": citations,
-                                      "results": results, "sources": source_links(results)})
+                                      "results": results, "sources": source_links(results, citations)})
         return json_response(502, {"error": "The assistant did not return a complete answer."})
     except (ConnectTimeoutError, ReadTimeoutError):
         return json_response(504, {"error": "The answer took too long. Please try again."})

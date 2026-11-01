@@ -11,7 +11,7 @@ The code follows the original `RAG_eLearning_App_v1.0/RAG_eLearning_App/lambda_f
 3. Read the user's `prompt` and check that it is valid.
 4. Call `agentic_retrieve_stream` using Nova Pro and our knowledge base.
 5. Wait for the final answer, citations, and retrieved passages.
-6. Return those values as JSON, together with source links for Streamlit.
+6. Return those values as JSON, together with links only to the documents cited in the answer. Multiple cited chunks from one document produce one link; uncited search results are not shown as supporting sources.
 
 There are no custom exception classes, client-cache decorators, or request-time AWS resource lookups. The two small helpers format JSON responses and build source links. The handler contains the request flow and normal error handling. It accepts both `{"prompt":"..."}` and API Gateway JSON bodies. `{"action":"health"}` checks deployment without invoking a model.
 
