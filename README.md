@@ -1,5 +1,11 @@
 # e-learning-platform
 
+## Live demo
+
+**[Open the live demo →](https://e-learning-app.streamlit.app/)**
+
+Enter a question about the sample learning documents and click **Find answer** to see the answer and its supporting sources.
+
 An AI learning assistant that helps learners find answers in their course materials using everyday language.
 
 ## The problem
