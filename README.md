@@ -20,29 +20,33 @@ The **knowledge base** is the searchable collection of course content. RAG is th
 
 ![RAG architecture showing questions, managed document ingestion, monitoring, email notifications, and GitHub Actions CI/CD](docs/images/rag-knowledge-base-architecture-monitoring.png)
 
-**API Gateway and Lambda are both serverless AWS services:** API Gateway receives requests, and Lambda runs the Python backend without us managing servers. The diagram shows **Serverless Framework** as deployment tooling outside the path of a user's question. The current knowledge-base pipeline submits native YAML directly to **CloudFormation**; the optional Serverless entry point imports the same infrastructure definitions.
+The diagram follows the implemented request, document, notification, monitoring, and deployment flows. **API Gateway and Lambda are serverless AWS services.** GitHub Actions deploys the AWS resources through native **CloudFormation YAML**; Serverless Framework remains optional tooling. Streamlit Community Cloud hosts the frontend separately.
+
+See the [architecture review](docs/architecture.md) for the flow traced through the code, source-link handling, alarm signals, security boundaries, and current timeout settings.
 
 ### 1. Prepare the learning materials
 
-The bottom half of the diagram shows how documents become searchable:
+The **Documents and source links** panel shows how documents become searchable:
 
 The documents can come from different sources, such as Google Drive, SharePoint, or other document storage systems. This architecture uses **Amazon S3** as its data source. Other sources can be connected through a suitable connector or ingestion process.
 
 1. **Store documents in Amazon S3.** This is the storage location for the learning materials.
 2. **Split the content into chunks.** Smaller passages make it easier to find the specific information needed for a question.
 3. **Create embeddings with Amazon Nova Multimodal Embeddings.** An embedding is a list of numbers that represents the meaning of a passage. It helps the system find related ideas even when the learner uses different words.
-4. **Store and index the embeddings in the managed knowledge base.** Amazon Bedrock manages vector storage, indexing, and retrieval. The infrastructure uses this managed storage rather than a separate OpenSearch collection shown in the diagram.
+4. **Store and index the embeddings in the managed knowledge base.** Amazon Bedrock manages vector storage, indexing, and retrieval. Document synchronization runs on demand.
 
 ### 2. Answer a learner's question
 
-The top half of the diagram shows what happens when someone asks for help:
+The **User request and response** panel shows what happens when someone asks for help:
 
-1. The learner types a question in the **Streamlit app**.
-2. **Amazon API Gateway** receives the request and passes it to **AWS Lambda**.
-3. Lambda coordinates the work and retrieves relevant passages from the **Amazon Bedrock knowledge base** using the AWS SDK, Boto3.
-4. The retrieved passagesâ€”the **top K chunks**, meaning a selected number of the closest matchesâ€”provide context for a language model in **Amazon Bedrock**.
-5. The model uses the question and those passages to generate an explanation.
-6. The answer returns to the learner in the app.
+1. The learner types a question in the **Streamlit app** and clicks **Find answer**.
+2. The Streamlit server sends the question to **Amazon API Gateway**, which passes it to **AWS Lambda**.
+3. Lambda publishes a submitted-question notification to **Amazon SNS**, then calls **Amazon Bedrock** through Boto3's `agentic_retrieve_stream` operation.
+4. Nova Pro searches the managed knowledge base and uses the retrieved passages to generate an explanation. Each search requests two passages by default, with up to three agent iterations.
+5. Lambda returns the completed answer, citations, and links to the unique supporting documents. API Gateway passes that response back to Streamlit for display.
+6. Opening a cited source reads the original document directly from private S3 through a temporary signed link, valid for five minutes by default.
+
+The monitoring panel shows the separate operational paths: request markers become CloudWatch metrics; API, Lambda, and notification-publishing failures trigger alarms through SNS. Question text is included in the administrator email and omitted from operational logs.
 
 ## A simple example
 
@@ -153,13 +157,13 @@ The [GitHub Actions workflow](.github/workflows/ci.yml) runs on pull requests ta
 
 This checks dependency installation, frontend behavior with mocked responses, infrastructure YAML, and deployment safety. A deployment job runs only for trusted `main`-branch pushes or manual workflow runs after these checks pass.
 
-The deployment job uses GitHub OIDC, merges and validates the native YAML template, checks and executes a CloudFormation change set, and verifies the knowledge base, Lambda, and REST API mapping. It rejects destructive removals and possible replacements; old API deployment snapshots are retained when publishing changes. Its readable YAML template and deployment summary are saved as workflow artifacts. The one-time deployment role is provisioned separately; the pipeline needs its ARN but no Serverless credential. Streamlit hosting is managed separately.
+The deployment job uses GitHub OIDC, merges and validates the native YAML template, checks and executes a CloudFormation change set, and verifies the knowledge base, Lambda, REST API mapping, notification subscription, and monitoring resources. It rejects destructive removals and possible replacements; old API deployment snapshots are retained when publishing changes. Its readable YAML template and deployment summary are saved as workflow artifacts. The one-time deployment role is provisioned separately; the pipeline needs its ARN but no Serverless credential. Streamlit hosting is managed separately.
 
 ## What about keys and credentials?
 
-The knowledge base and embeddings help find information. **Credentials serve a different purpose: they control access to AWS services.** The diagram does not specify an API key or sign-in mechanism.
+The knowledge base and embeddings help find information. **Credentials serve a different purpose: they control access to AWS services.** The current REST endpoint has no application sign-in or API key requirement; the internal Lambda and knowledge-base calls use project-scoped IAM roles.
 
-Lambda should use an IAM execution role with the permissions it needs. AWS secret keys should never be embedded in the frontend or committed to this repository.
+AWS secret keys are not embedded in the frontend or committed to this repository. GitHub Actions uses short-lived OIDC credentials for deployment.
 
 ## E-learning Lambda
 
